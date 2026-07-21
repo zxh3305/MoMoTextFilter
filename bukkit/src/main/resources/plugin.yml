@@ -1,0 +1,25 @@
+name: MoMoTextFilter
+version: 2.0.0
+main: com.momocraft.textfilter.TextFilter
+api-version: 1.21
+authors: [MoMoCraft]
+description: 违禁词过滤器插件，支持铁砧命名、告示牌编辑、书与笔编辑、聊天消息检测
+softdepend: [CMI]
+folia-supported: true
+
+commands:
+  textfilter:
+    description: MoMoTextFilter插件命令
+    usage: /textfilter <reload|info>
+    aliases: [tf]
+
+permissions:
+  textfilter.admin:
+    description: 接收违禁词警告通知
+    default: op
+  textfilter.anvil.bypass:
+    description: 绕过铁砧重命名限制
+    default: op
+  textfilter.command:
+    description: 使用插件命令
+    default: op

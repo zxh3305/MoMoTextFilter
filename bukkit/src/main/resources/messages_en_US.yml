@@ -1,0 +1,65 @@
+warnings:
+  player-warning: '<red>[Warning]</red> You used a banned word, please follow server rules!'
+  admin-warning: '<gold>[MoMoTextFilter]</gold> <gray>Player</gray> <yellow>%player%</yellow> <gray>used banned word in</gray> <green>%context%</green><gray>:</gray> <red>%bannedword%</red> <gray>(Level:</gray> <blue>%level%</gray>)'
+  reload-success: '<green>Configuration reloaded successfully!</green>'
+
+levels:
+  level-1:
+    player-warning: '<red>[SEVERE WARNING]</red> You used a severe banned word! This is a strict warning, please stop immediately!'
+    admin-warning: '<gold>[MoMoTextFilter]</gold> <red>[SEVERE]</red> <gray>Player</gray> <yellow>%player%</yellow> <gray>used severe banned word in</gray> <green>%context%</green><gray>:</gray> <red>%bannedword%</red>'
+  level-2:
+    player-warning: '<yellow>[Warning]</yellow> You used inappropriate language, please watch your words!'
+    admin-warning: '<gold>[MoMoTextFilter]</gold> <yellow>[WARNING]</yellow> <gray>Player</gray> <yellow>%player%</yellow> <gray>used inappropriate language in</gray> <green>%context%</green><gray>:</gray> <red>%bannedword%</red>'
+
+info:
+  title: '<gold>========== MoMoTextFilter ==========</gold>'
+  version: '<yellow>Version:</yellow> <white>2.0.0</white>'
+  author: '<yellow>Author:</yellow> <white>MoMoCraft</white>'
+  desc: '<yellow>Description:</yellow> <white>Banned word filter plugin</white>'
+  banned-words-count: '<yellow>Banned words count:</yellow> <white>%count%</white>'
+  footer: '<gold>=====================================</gold>'
+
+command:
+  no-permission: '<red>You do not have permission to execute this command!</red>'
+  help-title: '<gold>========== MoMoTextFilter Command Help ==========</gold>'
+  help-reload: '<yellow>/textfilter reload</yellow> <gray>- Reload configuration</gray>'
+  help-info: '<yellow>/textfilter info</yellow> <gray>- Show plugin info</gray>'
+  help-footer: '<gold>=============================================</gold>'
+
+no-dependency-warning: '[MoMoTextFilter] Warning: The following plugins are not installed, some features may not work properly: %plugins%'
+
+cross-message:
+  tracking-success: '<gold>[MoMoTextFilter] </gold><yellow>Cross-message detection successful!</yellow><gray> [Player: %player%]</gray>'
+  tracking-timeout: '<gold>[MoMoTextFilter] </gold><yellow>Cross-message tracking timeout!</yellow><gray> [Player: %player%]</gray>'
+  detail-combined: '<gray>  - Combined text: %combined%</gray>'
+  detail-word: '<gray>  - Matched word: %word%</gray>'
+  detail-level: '<gray>  - Level: %level%</gray>'
+  detail-current: '<gray>  - Current text: %current%</gray>'
+  detail-tracking: '<gray>  - Tracking word: %tracking%</gray>'
+  detail-count: '<gray>  - Tracked messages: %count%</gray>'
+
+context-names:
+  anvil: Anvil
+  sign: Sign
+  book: Writable Book
+  chat: Chat
+  cmi-msg: CMI Private Message
+  cmi-reply: CMI Reply
+  cmi-broadcast: CMI Broadcast
+  cmi-bbroadcast: CMI Cross-Server Broadcast
+  cmi-staffmsg: CMI Staff Message
+  cmi-actionbarmsg: CMI Action Bar
+  cmi-bossbarmsg: CMI Boss Bar
+  cmi-helpop: CMI Help Op
+  cmi-mail-send: CMI Mail Send
+  cmi-mail-sendtemp: CMI Mail Send Temp
+  cmi-se: CMI Sign Edit
+  cmi-toast: CMI Toast
+  cmi-titlemsg: CMI Title Message
+  cmi-me: CMI Me
+  minecraft-me: Minecraft Me
+  minecraft-msg: Minecraft Message
+  minecraft-say: Minecraft Say
+  minecraft-tm: Minecraft Team Message
+  minecraft-tellraw: Minecraft Tellraw
+  minecraft-chatcolor: Minecraft Chat Color
