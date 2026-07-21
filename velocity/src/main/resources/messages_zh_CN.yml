@@ -1,0 +1,44 @@
+warnings:
+  player-warning: '<red>[警告]</red> 你使用了违禁词，请遵守服务器规则！'
+  admin-warning: '<gold>[MoMoTextFilter]</gold> <gray>玩家</gray> <yellow>%player%</yellow> <gray>在</gray> <green>%context%</green> <gray>中使用了违禁词:</gray> <red>%bannedword%</red> <gray>(等级:</gray> <blue>%level%</gray>)'
+  reload-success: '<green>配置文件已重新加载！</green>'
+
+levels:
+  level-1:
+    player-warning: '<red>[严重警告]</red> 你使用了严重违禁词！这是严厉警告，请立即停止！'
+    admin-warning: '<gold>[MoMoTextFilter]</gold> <red>[严重]</red> <gray>玩家</gray> <yellow>%player%</yellow> <gray>在</gray> <green>%context%</green> <gray>中使用了严重违禁词:</gray> <red>%bannedword%</red>'
+  level-2:
+    player-warning: '<yellow>[警告]</yellow> 你使用了不当词汇，请注意言行！'
+    admin-warning: '<gold>[MoMoTextFilter]</gold> <yellow>[警告]</yellow> <gray>玩家</gray> <yellow>%player%</yellow> <gray>在</gray> <green>%context%</green> <gray>中使用了不当词汇:</gray> <red>%bannedword%</red>'
+
+info:
+  title: '<gold>========== MoMoTextFilter ==========</gold>'
+  version: '<yellow>版本:</yellow> <white>2.0.0</white>'
+  author: '<yellow>作者:</yellow> <white>MoMoCraft</white>'
+  desc: '<yellow>描述:</yellow> <white>违禁词过滤器插件 (Velocity)</white>'
+  banned-words-count: '<yellow>敏感词数量:</yellow> <white>%count%</white>'
+  footer: '<gold>=====================================</gold>'
+
+command:
+  no-permission: '<red>你没有权限执行此命令！</red>'
+  help-title: '<gold>========== MoMoTextFilter 命令帮助 ==========</gold>'
+  help-reload: '<yellow>/textfilter reload</yellow> <gray>- 重新加载配置文件</gray>'
+  help-info: '<yellow>/textfilter info</yellow> <gray>- 显示插件信息</gray>'
+  help-footer: '<gold>=============================================</gold>'
+
+no-dependency-warning: '[MoMoTextFilter] 警告：以下插件未安装，某些功能可能无法正常工作：%plugins%'
+
+cross-message:
+  tracking-success: '<gold>[MoMoTextFilter] </gold><yellow>跨消息检测成功!</yellow><gray> [玩家: %player%]</gray>'
+  tracking-timeout: '<gold>[MoMoTextFilter] </gold><yellow>跨消息检测超时!</yellow><gray> [玩家: %player%]</gray>'
+  detail-combined: '<gray>  - 拼接文本: %combined%</gray>'
+  detail-word: '<gray>  - 匹配违禁词: %word%</gray>'
+  detail-level: '<gray>  - 等级: %level%</gray>'
+  detail-current: '<gray>  - 当前文本: %current%</gray>'
+  detail-tracking: '<gray>  - 追踪词: %tracking%</gray>'
+  detail-count: '<gray>  - 已追踪消息数: %count%</gray>'
+
+context-names:
+  chat: 聊天消息
+  servershout-shout: 跨服喊话
+  servershout-invite: 跨服邀请

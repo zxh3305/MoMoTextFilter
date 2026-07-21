@@ -1,0 +1,40 @@
+plugins {
+    id 'java'
+}
+
+repositories {
+    mavenCentral()
+    maven { url 'https://repo.papermc.io/repository/maven-public/' }
+    maven { url 'https://nexus.velocitypowered.com/repository/maven-public/' }
+}
+
+dependencies {
+    compileOnly 'com.velocitypowered:velocity-api:3.3.0-SNAPSHOT'
+    annotationProcessor 'com.velocitypowered:velocity-api:3.3.0-SNAPSHOT'
+    implementation 'org.spongepowered:configurate-yaml:4.2.0'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+tasks.withType(JavaCompile) {
+    options.encoding = 'UTF-8'
+}
+
+jar {
+    archiveBaseName = 'MoMoTextFilter-Velocity'
+    archiveVersion = '2.0.0'
+    archiveClassifier = ''
+    
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+    
+    exclude 'META-INF/*.RSA', 'META-INF/*.SF', 'META-INF/*.DSA'
+    
+    manifest {
+        attributes 'Main-Class': 'com.momocraft.textfilter.TextFilterVelocity'
+    }
+}
