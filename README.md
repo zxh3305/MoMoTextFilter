@@ -4,17 +4,17 @@ This plugin supports a wide range of detecting methods, including chat messages,
 ## 🚀 Latest Updates
 - **Completely refactored core logic.**
 - **Added i18n (internationalization) support.**
-- **Added cross-message detection with a configurable detection window.**
+- **Added cross-message detection with a configurable detection range.**
 - **Added mapping tables for confusable characters**, including Traditional Chinese, Japanese, English, numbers, and punctuation.
-- **Introduced a penalty mechanism for prohibited words.**
-- **Allowed customized chat bar alerts for different levels of prohibited words.**
+- **Introduced a punishment for banned-words.**
+- **Allowed customized chat bar alerts for different levels of banned-words.**
 - **Rewrote the command listener logic**, making it easier to add custom commands.
 - **Removed character limits for anvil naming.**
 
 ## ✨ Core Features
 - **Advanced Matching Algorithm:** Supports cross-character matching with a configurable range.
-- **Extra Utilities:** Comes with built-in whitelist and inverse detection.
-- **Customizable Feedback:** The feedback text triggered by command executions and banned-words detections can be customized as needed.
+- **Extra Utilities:** Supports whitelist and reverse detection.
+- **Customizable Feedback:** The feedback message triggered by command executions and banned-words detections can be customized as needed.
 
 ## 🛡️ Permissions
 - `textfilter.admin` - Receive prohibited word warning notifications.
