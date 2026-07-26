@@ -67,6 +67,21 @@ external-plugins:
       - "/invite"
       - "/yq"
 
+  # ServerShout 喊话检测配置
+  # 支持命令模式（/hh, /shout）和前缀模式（!）
+  servershout-shout:
+    enable: true
+    args-number: 1
+    extend-to-end: true
+    commands:
+      - "/hh"
+      - "/shout"
+    # 前缀列表：匹配以这些字符开头的聊天消息
+    # 例如 "!" 表示检测所有以 "!" 开头的聊天消息
+    # 可以自定义其他字符，如 "@"、"#" 等
+    prefixes:
+      - "!"
+
 # ==================== 惩罚命令配置 ====================
 punish-commands:
   levels:
