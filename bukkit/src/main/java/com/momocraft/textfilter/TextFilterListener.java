@@ -41,7 +41,8 @@ public class TextFilterListener implements Listener {
             lines[i] = event.getLine(i);
         }
 
-        String combinedText = combineLinesWithNewlines(lines);
+        int[] positions = new int[4];
+        String combinedText = combineLinesWithNewlines(lines, positions);
         BannedWordDetection combinedDetection = filterTextWithDetection(combinedText);
         boolean combinedFound = !combinedText.equals(combinedDetection.getFilteredText());
 
@@ -65,9 +66,9 @@ public class TextFilterListener implements Listener {
 
         if (combinedFound) {
             String filteredCombined = combinedDetection.getFilteredText();
-            String[] filteredLines = splitTextToLines(filteredCombined, 4);
-            for (int i = 0; i < 4; i++) {
-                if (i < filteredLines.length && filteredLines[i] != null) {
+            String[] filteredLines = splitTextToLines(filteredCombined, positions, 4);
+            for (int i = 0; i < filteredLines.length && i < 4; i++) {
+                if (filteredLines[i] != null) {
                     event.setLine(i, filteredLines[i]);
                 }
             }
@@ -132,7 +133,8 @@ public class TextFilterListener implements Listener {
             }
         }
 
-        String combinedText = combineLinesWithNewlines(pageTexts.toArray(new String[0]));
+        int[] positions = new int[pageTexts.size()];
+        String combinedText = combineLinesWithNewlines(pageTexts.toArray(new String[0]), positions);
         BannedWordDetection combinedDetection = filterTextWithDetection(combinedText);
         boolean combinedFound = !combinedText.equals(combinedDetection.getFilteredText());
 
@@ -226,12 +228,13 @@ public class TextFilterListener implements Listener {
                                 bookPageTexts.add(legacySerializer.serialize(page));
                             }
 
-                            String bookCombinedText = combineLinesWithNewlines(bookPageTexts.toArray(new String[0]));
+                            int[] bookPositions = new int[bookPageTexts.size()];
+                            String bookCombinedText = combineLinesWithNewlines(bookPageTexts.toArray(new String[0]), bookPositions);
                             BannedWordDetection bookCombinedDetection = filterTextWithDetection(bookCombinedText);
 
                             if (!bookCombinedText.equals(bookCombinedDetection.getFilteredText())) {
                                 String filteredCombined = bookCombinedDetection.getFilteredText();
-                                String[] filteredLines = splitTextToLines(filteredCombined, bookPageTexts.size());
+                                String[] filteredLines = splitTextToLines(filteredCombined, bookPositions, bookPageTexts.size());
                                 for (int i = 0; i < filteredLines.length; i++) {
                                     String filteredPage = filteredLines[i] != null ? filteredLines[i] : "";
                                     newPages.add(legacySerializer.deserialize(filteredPage));
@@ -262,29 +265,71 @@ public class TextFilterListener implements Listener {
         }
     }
 
-    private String combineLinesWithNewlines(String[] lines) {
+    /**
+     * 将多行文本合并为一个字符串，页面之间用换行符分隔。
+     * 同时记录每个页面在合并文本中的起始字符位置。
+     * @param lines 原始页面文本数组
+     * @param positions 输出参数：各页在合并文本中的起始字符位置（需提前分配空间）
+     * @return 合并后的文本
+     */
+    private String combineLinesWithNewlines(String[] lines, int[] positions) {
         StringBuilder sb = new StringBuilder();
+        
         for (int i = 0; i < lines.length; i++) {
-            if (sb.length() > 0) {
-                sb.append("\n");
+            // 记录当前页面的起始位置
+            if (i < positions.length) {
+                positions[i] = sb.length();
             }
+            
             if (lines[i] != null) {
                 sb.append(lines[i]);
             }
+            
+            // 页面之间用换行符分隔，最后一页不加
+            if (i < lines.length - 1) {
+                sb.append("\n");
+            }
         }
+        
         return sb.toString();
     }
 
-    private String[] splitTextToLines(String text, int maxLines) {
+    /**
+     * 将过滤后的文本按原始页面边界分割。
+     * 由于 TextProcessor.replaceInOriginalWithMask() 做的是 1:1 字符替换，
+     * 过滤后的文本长度与原始文本完全相同，因此可以直接使用原始位置进行精确分割。
+     * @param text 过滤后的文本
+     * @param originalPositions 原始各页在合并文本中的起始字符位置
+     * @param maxLines 原始页数
+     */
+    private String[] splitTextToLines(String text, int[] originalPositions, int maxLines) {
         String[] lines = new String[maxLines];
         if (text == null || text.isEmpty()) {
+            for (int i = 0; i < maxLines; i++) {
+                lines[i] = "";
+            }
             return lines;
         }
 
-        String[] parts = text.split("\n", maxLines);
-        for (int i = 0; i < Math.min(parts.length, maxLines); i++) {
-            lines[i] = parts[i];
+        for (int i = 0; i < maxLines; i++) {
+            // 获取该页面的起始位置
+            int start = (i < originalPositions.length) ? originalPositions[i] : text.length();
+            
+            // 获取该页面的结束位置（下一页的起始位置或文本末尾）
+            int end;
+            if (i < maxLines - 1 && i + 1 < originalPositions.length) {
+                end = originalPositions[i + 1];
+            } else {
+                end = text.length();
+            }
+            
+            // 确保边界有效
+            start = Math.max(0, Math.min(start, text.length()));
+            end = Math.max(start, Math.min(end, text.length()));
+            
+            lines[i] = text.substring(start, end);
         }
+        
         return lines;
     }
 
@@ -310,7 +355,8 @@ public class TextFilterListener implements Listener {
             lines[i] = signSide.getLine(i);
         }
 
-        String combinedText = combineLinesWithNewlines(lines);
+        int[] positions = new int[4];
+        String combinedText = combineLinesWithNewlines(lines, positions);
         BannedWordDetection combinedDetection = filterTextWithDetection(combinedText);
         boolean combinedFound = !combinedText.equals(combinedDetection.getFilteredText());
 
@@ -330,7 +376,7 @@ public class TextFilterListener implements Listener {
 
         if (combinedFound) {
             String filteredCombined = combinedDetection.getFilteredText();
-            String[] filteredLines = splitTextToLines(filteredCombined, 4);
+            String[] filteredLines = splitTextToLines(filteredCombined, positions, 4);
             for (int i = 0; i < 4; i++) {
                 if (i < filteredLines.length && filteredLines[i] != null) {
                     signSide.setLine(i, filteredLines[i]);
