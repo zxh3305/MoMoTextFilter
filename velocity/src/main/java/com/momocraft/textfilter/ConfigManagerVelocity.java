@@ -182,6 +182,13 @@ public class ConfigManagerVelocity {
                 }
                 cmdType.setCommands(commands);
 
+                // 加载前缀列表（用于匹配非 / 开头的消息，如 "!"）
+                List<String> prefixes = new ArrayList<>();
+                for (CommentedConfigurationNode prefixNode : typeSection.node("prefixes").childrenList()) {
+                    prefixes.add(prefixNode.getString(""));
+                }
+                cmdType.setPrefixes(prefixes);
+
                 commandTypes.put(typeName, cmdType);
             }
         }
