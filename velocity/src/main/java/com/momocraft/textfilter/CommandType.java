@@ -10,13 +10,17 @@ public class CommandType {
     private List<Integer> argsNumbers;
     private List<String> commands;
     private boolean extendToEnd;
+    private List<String> prefixes;
+    private boolean isPrefixMode;
 
     public CommandType(String name) {
         this.name = name;
         this.enabled = true;
         this.argsNumbers = new ArrayList<>();
         this.commands = new ArrayList<>();
+        this.prefixes = new ArrayList<>();
         this.extendToEnd = false;
+        this.isPrefixMode = false;
     }
 
     public String getName() {
@@ -55,8 +59,35 @@ public class CommandType {
         this.extendToEnd = extendToEnd;
     }
 
+    public List<String> getPrefixes() {
+        return prefixes;
+    }
+
+    public void setPrefixes(List<String> prefixes) {
+        this.prefixes = prefixes;
+        this.isPrefixMode = !prefixes.isEmpty();
+    }
+
+    public boolean isPrefixMode() {
+        return isPrefixMode;
+    }
+
     public boolean matchesCommand(String message) {
-        if (message == null || !message.startsWith("/")) {
+        if (message == null) {
+            return false;
+        }
+        
+        // 前缀模式：匹配以特定前缀开头的消息（如 "!"）
+        if (isPrefixMode) {
+            for (String prefix : prefixes) {
+                if (message.startsWith(prefix)) {
+                    return true;
+                }
+            }
+        }
+        
+        // 命令模式：匹配以 "/" 开头的命令
+        if (!message.startsWith("/")) {
             return false;
         }
         String lowerMessage = message.toLowerCase();
@@ -75,7 +106,22 @@ public class CommandType {
     }
 
     public String extractMessage(String message) {
-        if (message == null || !message.startsWith("/")) {
+        if (message == null) {
+            return message;
+        }
+
+        // 前缀模式：提取前缀后的所有内容
+        if (isPrefixMode) {
+            for (String prefix : prefixes) {
+                if (message.startsWith(prefix)) {
+                    return message.substring(prefix.length()).trim();
+                }
+            }
+            return message;
+        }
+
+        // 命令模式
+        if (!message.startsWith("/")) {
             return message;
         }
 
@@ -135,7 +181,22 @@ public class CommandType {
     }
 
     public String replaceMessage(String originalCommand, String filteredText) {
-        if (originalCommand == null || !originalCommand.startsWith("/")) {
+        if (originalCommand == null) {
+            return originalCommand;
+        }
+
+        // 前缀模式：直接替换前缀后的内容
+        if (isPrefixMode) {
+            for (String prefix : prefixes) {
+                if (originalCommand.startsWith(prefix)) {
+                    return prefix + filteredText;
+                }
+            }
+            return originalCommand;
+        }
+
+        // 命令模式
+        if (!originalCommand.startsWith("/")) {
             return originalCommand;
         }
 
