@@ -221,6 +221,71 @@ public class TextFilterVelocity {
 
     @Subscribe(priority = 100)
     public void onPlayerChat(PlayerChatEvent event) {
+        Player player = event.getPlayer();
+        String message = event.getMessage();
+        if (message == null || message.isEmpty()) {
+            return;
+        }
+
+        ConfigManagerVelocity config = configManager;
+        CommandType cmdType = config.findMatchingCommandType(message);
+
+        // 只处理前缀模式的消息（非 / 开头的命令）
+        if (cmdType == null || !cmdType.isPrefixMode()) {
+            return;
+        }
+
+        String contextName = config.getContextName(cmdType.getName());
+        String extractedMessage = cmdType.extractMessage(message);
+
+        CrossMessageTracker.TrackingResult trackingResult = crossMessageTracker.checkAndTrack(player, extractedMessage, contextName);
+        if (trackingResult != null) {
+            String filteredMessage = extractedMessage;
+            
+            if (trackingResult.isCrossMessageMatch()) {
+                filteredMessage = replaceCrossMessageBannedWord(extractedMessage, trackingResult.getBannedWord());
+            }
+            
+            BannedWordDetection detection = filterTextWithDetection(filteredMessage, config);
+            if (!filteredMessage.equals(detection.getFilteredText())) {
+                filteredMessage = detection.getFilteredText();
+            }
+            
+            if (!extractedMessage.equals(filteredMessage)) {
+                String newMessage = cmdType.replaceMessage(message, filteredMessage);
+                if (!message.equals(newMessage)) {
+                    event.setResult(PlayerChatEvent.ChatResult.message(newMessage));
+                }
+            }
+            
+            List<BannedWordDetection.BannedWordInfo> allDetected = new ArrayList<>();
+            String trackingKey = trackingResult.getBannedWord() + ":" + trackingResult.getLevel();
+            Set<String> addedKeys = new HashSet<>();
+            addedKeys.add(trackingKey);
+            allDetected.add(new BannedWordDetection.BannedWordInfo(trackingResult.getBannedWord(), trackingResult.getLevel()));
+            
+            if (detection != null && detection.hasDetectedWords()) {
+                for (BannedWordDetection.BannedWordInfo info : detection.getDetectedWords()) {
+                    String key = info.getWord() + ":" + info.getLevel();
+                    if (!addedKeys.contains(key)) {
+                        addedKeys.add(key);
+                        allDetected.add(info);
+                    }
+                }
+            }
+            
+            sendWarnings(player, contextName, trackingResult.getBannedWord(), trackingResult.getLevel(), allDetected);
+            return;
+        }
+
+        BannedWordDetection detection = filterTextWithDetection(extractedMessage, config);
+        if (!extractedMessage.equals(detection.getFilteredText())) {
+            String newMessage = cmdType.replaceMessage(message, detection.getFilteredText());
+            if (!message.equals(newMessage)) {
+                event.setResult(PlayerChatEvent.ChatResult.message(newMessage));
+            }
+            sendWarnings(player, contextName, detection.getFirstBannedWord(), detection.getFirstLevel(), detection.getDetectedWords());
+        }
     }
 
     private BannedWordDetection filterTextWithDetection(String text, ConfigManagerVelocity config) {
