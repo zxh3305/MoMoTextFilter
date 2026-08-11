@@ -335,7 +335,11 @@ public class ColorCodeUtils {
         }
 
         TextProcessor processor = new TextProcessor(text);
-        String processedText = CharacterMapper.normalize(java.text.Normalizer.normalize(processor.getProcessedText(), java.text.Normalizer.Form.NFKC).toLowerCase());
+        String visibleText = processor.getProcessedText();
+        // NFKC 可能将单字符展开为多字符（如 "…"(U+2026) -> "...")，导致规范化文本长度
+        // 与可见文本不一致。必须记录 规范化索引 -> 可见索引 映射，否则替换时星号会错位。
+        NormResult norm = normalizeWithMapping(visibleText);
+        String processedText = norm.text;
         boolean[] toReplace = new boolean[processedText.length()];
         BannedWordDetection result = new BannedWordDetection(text);
 
@@ -411,8 +415,98 @@ public class ColorCodeUtils {
             }
         }
 
-        result.setFilteredText(processor.replaceInOriginalWithMask(toReplace, "*"));
+        // 将规范化文本索引的 mask 转换回可见文本索引（NFKC 展开后二者长度不同，直接映射会错位）
+        boolean[] visibleMask = new boolean[visibleText.length()];
+        for (int j = 0; j < toReplace.length; j++) {
+            if (toReplace[j]) {
+                int vi = norm.mapping.get(j);
+                if (vi >= 0 && vi < visibleMask.length) {
+                    visibleMask[vi] = true;
+                }
+            }
+        }
+
+        String filtered = processor.replaceInOriginalWithMask(visibleMask, "*");
+        // 如果没有违禁词，返回原始文本（未预处理）；否则返回预处理后的文本（带替换）
+        if (filtered.equals(processor.getOriginalText())) {
+            result.setFilteredText(text);
+        } else {
+            result.setFilteredText(filtered);
+        }
         return result;
+    }
+
+    /**
+     * 规范化文本并记录 规范化索引 -> 可见索引 映射。
+     * NFKC 规范化可能将单字符展开为多个字符（如 "…"(U+2026) 展开为 "..."），
+     * 导致规范化后的文本长度与可见文本不同；通过该映射可将匹配位置准确还原到可见文本。
+     */
+    private static NormResult normalizeWithMapping(String visibleText) {
+        StringBuilder sb = new StringBuilder(visibleText.length());
+        List<Integer> mapping = new ArrayList<>();
+        for (int vi = 0; vi < visibleText.length(); vi++) {
+            String norm = CharacterMapper.normalize(java.text.Normalizer.normalize(
+                    String.valueOf(visibleText.charAt(vi)), java.text.Normalizer.Form.NFKC).toLowerCase());
+            if (norm.isEmpty()) {
+                mapping.add(vi);
+                continue;
+            }
+            for (int k = 0; k < norm.length(); k++) {
+                mapping.add(vi);
+            }
+            sb.append(norm);
+        }
+        return new NormResult(sb.toString(), mapping);
+    }
+
+    private static class NormResult {
+        final String text;
+        final List<Integer> mapping;
+
+        NormResult(String text, List<Integer> mapping) {
+            this.text = text;
+            this.mapping = mapping;
+        }
+    }
+
+    /**
+     * 对文本执行违禁词检测，并在首次替换后反复复核处理后的文本，直到结果稳定。
+     * 例如 "傻傻逼逼" 经一次替换可能得到 "*傻*逼"，此时 "傻*逼" 仍可匹配违禁词，
+     * 需再次检测直至无违禁词残留。
+     * 由于 {@link TextProcessor#replaceInOriginalWithMask} 为 1:1 字符替换，
+     * 文本长度保持不变，位置映射不受影响。
+     */
+    public static BannedWordDetection filterAllWithRecheck(String text,
+            Map<String, List<String>> bannedWordsByLevel,
+            boolean fuzzyMatch, int defaultMaxCharGap, Map<String, Integer> maxCharGapByLevel,
+            boolean reverseMatch, Map<String, Boolean> reverseMatchByLevel, Iterable<String> whitelist) {
+        if (text == null) {
+            return new BannedWordDetection(null);
+        }
+
+        BannedWordDetection detection = filterAllBannedWordsWithDetection(text, bannedWordsByLevel,
+                fuzzyMatch, defaultMaxCharGap, maxCharGapByLevel, reverseMatch, reverseMatchByLevel, whitelist);
+        String filtered = detection.getFilteredText();
+        if (filtered == null || filtered.equals(text)) {
+            return detection;
+        }
+
+        // 反复核处理后的文本，最多 5 次以防死循环
+        for (int i = 0; i < 5; i++) {
+            BannedWordDetection recheck = filterAllBannedWordsWithDetection(filtered, bannedWordsByLevel,
+                    fuzzyMatch, defaultMaxCharGap, maxCharGapByLevel, reverseMatch, reverseMatchByLevel, whitelist);
+            String next = recheck.getFilteredText();
+            if (next.equals(filtered)) {
+                break;
+            }
+            for (BannedWordDetection.BannedWordInfo info : recheck.getDetectedWords()) {
+                detection.addDetectedWord(info.getWord(), info.getLevel());
+            }
+            filtered = next;
+        }
+
+        detection.setFilteredText(filtered);
+        return detection;
     }
 
     private static boolean findFuzzyMatches(String text, String bannedWord, int maxCharGap, Iterable<String> whitelist, boolean[] toReplace) {
