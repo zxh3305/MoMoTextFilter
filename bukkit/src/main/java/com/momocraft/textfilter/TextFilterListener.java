@@ -13,7 +13,6 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerEditBookEvent;
 import org.bukkit.event.block.SignChangeEvent;
-import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.BookMeta;
 
 import java.util.ArrayList;
@@ -121,148 +120,117 @@ public class TextFilterListener implements Listener {
             return;
         }
 
-        boolean foundBannedWord = false;
-        String bannedWord = "";
-        String level = "";
-
+        // ---- 1. 收集页面文本并合并（合并检测可捕获跨页违禁词）----
         List<String> pageTexts = new ArrayList<>();
         if (bookMeta.hasPages()) {
             for (Component page : bookMeta.pages()) {
-                String pageText = legacySerializer.serialize(page);
-                pageTexts.add(pageText);
+                pageTexts.add(legacySerializer.serialize(page));
             }
         }
 
         int[] positions = new int[pageTexts.size()];
         String combinedText = combineLinesWithNewlines(pageTexts.toArray(new String[0]), positions);
-        BannedWordDetection combinedDetection = filterTextWithDetection(combinedText);
-        boolean combinedFound = !combinedText.equals(combinedDetection.getFilteredText());
+        BannedWordDetection combinedDetection = filterTextWithRecheck(combinedText);
+        boolean combinedFound = combinedText != null && !combinedText.equals(combinedDetection.getFilteredText());
 
+        // ---- 2. 检测标题 ----
+        BannedWordDetection titleDetection = null;
+        String title = null;
         if (bookMeta.hasTitle()) {
             Component titleComponent = bookMeta.title();
             if (titleComponent != null) {
-                String title = legacySerializer.serialize(titleComponent);
-                BannedWordDetection detection = filterTextWithDetection(title);
-                if (!title.equals(detection.getFilteredText())) {
-                    foundBannedWord = true;
-                    bannedWord = detection.getFirstBannedWord();
-                    level = detection.getFirstLevel();
-                }
+                title = legacySerializer.serialize(titleComponent);
+                titleDetection = filterTextWithRecheck(title);
             }
         }
 
-        if (!foundBannedWord && bookMeta.hasAuthor()) {
-            String author = bookMeta.getAuthor();
-            BannedWordDetection detection = filterTextWithDetection(author);
-            if (!author.equals(detection.getFilteredText())) {
-                foundBannedWord = true;
-                bannedWord = detection.getFirstBannedWord();
-                level = detection.getFirstLevel();
-            }
+        // ---- 3. 检测作者 ----
+        BannedWordDetection authorDetection = null;
+        String author = null;
+        if (bookMeta.hasAuthor()) {
+            author = bookMeta.getAuthor();
+            authorDetection = filterTextWithRecheck(author);
         }
 
-        if (!foundBannedWord && bookMeta.hasPages()) {
-            List<Component> pages = bookMeta.pages();
-            for (Component page : pages) {
-                String pageText = legacySerializer.serialize(page);
-                BannedWordDetection detection = filterTextWithDetection(pageText);
-                if (!pageText.equals(detection.getFilteredText())) {
-                    foundBannedWord = true;
-                    bannedWord = detection.getFirstBannedWord();
-                    level = detection.getFirstLevel();
-                    break;
-                }
-            }
+        // ---- 4. 汇总检测结果 ----
+        boolean titleFound = titleDetection != null && title != null && !title.equals(titleDetection.getFilteredText());
+        boolean authorFound = authorDetection != null && author != null && !author.equals(authorDetection.getFilteredText());
+        boolean foundBannedWord = combinedFound || titleFound || authorFound;
+
+        if (!foundBannedWord) {
+            return;
         }
 
+        // 聚合所有检测到的违禁词（addDetectedWord 自带去重，用于管理提醒）
+        List<BannedWordDetection.BannedWordInfo> allDetected = new ArrayList<>();
+        if (combinedDetection != null) {
+            allDetected.addAll(combinedDetection.getDetectedWords());
+        }
+        if (titleDetection != null) {
+            allDetected.addAll(titleDetection.getDetectedWords());
+        }
+        if (authorDetection != null) {
+            allDetected.addAll(authorDetection.getDetectedWords());
+        }
+
+        // 确定首个违禁词及等级（用于玩家警告）
+        String bannedWord = "";
+        String level = "";
+        if (combinedFound && combinedDetection.hasDetectedWords()) {
+            bannedWord = combinedDetection.getFirstBannedWord();
+            level = combinedDetection.getFirstLevel();
+        }
+        if (bannedWord.isEmpty() && titleFound) {
+            bannedWord = titleDetection.getFirstBannedWord();
+            level = titleDetection.getFirstLevel();
+        }
+        if (bannedWord.isEmpty() && authorFound) {
+            bannedWord = authorDetection.getFirstBannedWord();
+            level = authorDetection.getFirstLevel();
+        }
+
+        plugin.getCrossMessageTracker().removePlayer(player.getUniqueId());
+        plugin.sendWarnings(player, plugin.getConfigManager().getContextName("book"), bannedWord, level, allDetected);
+
+        // ---- 5. 通过事件 API 应用过滤结果 ----
+        // 直接修改 PlayerEditBookEvent 的新书本元数据，让服务端在事件完成后自然保存。
+        // 不可在事件后通过延迟任务 setItem 回写玩家物品栏，否则会触发客户端
+        // "编辑书本过快"检测并踢出玩家（不要以玩家身份去编辑书与笔）。
         if (combinedFound) {
-            foundBannedWord = true;
-            if (bannedWord.isEmpty()) {
-                bannedWord = combinedDetection.getFirstBannedWord();
-                level = combinedDetection.getFirstLevel();
+            String filteredCombined = combinedDetection.getFilteredText();
+            String[] filteredPages = splitTextToLines(filteredCombined, positions, pageTexts.size());
+            List<Component> newPages = new ArrayList<>();
+            for (int i = 0; i < filteredPages.length; i++) {
+                String fp = filteredPages[i] != null ? filteredPages[i] : "";
+                newPages.add(legacySerializer.deserialize(fp));
             }
+            bookMeta.pages(newPages);
         }
 
-        if (foundBannedWord) {
-            plugin.getCrossMessageTracker().removePlayer(player.getUniqueId());
-            List<BannedWordDetection.BannedWordInfo> allDetected = new ArrayList<>();
-            if (combinedDetection != null) {
-                allDetected.addAll(combinedDetection.getDetectedWords());
-            }
-            plugin.sendWarnings(player, plugin.getConfigManager().getContextName("book"), bannedWord, level, allDetected);
-
-            SchedulerCompat.runTaskLater(plugin, player, () -> {
-                for (int slot = 0; slot < player.getInventory().getSize(); slot++) {
-                    ItemStack item = player.getInventory().getItem(slot);
-                    if (item != null && item.getType().name().contains("BOOK") && item.hasItemMeta()) {
-                        BookMeta handBookMeta = (BookMeta) item.getItemMeta();
-                        boolean needUpdate = false;
-                        List<Component> newPages = new ArrayList<>();
-
-                        if (handBookMeta.hasTitle()) {
-                            Component titleComponent = handBookMeta.title();
-                            if (titleComponent != null) {
-                                String title = legacySerializer.serialize(titleComponent);
-                                BannedWordDetection detection = filterTextWithDetection(title);
-                                String filteredTitle = detection.getFilteredText();
-                                if (!title.equals(filteredTitle)) {
-                                    handBookMeta.title(legacySerializer.deserialize(filteredTitle));
-                                    needUpdate = true;
-                                }
-                            }
-                        }
-
-                        if (handBookMeta.hasAuthor()) {
-                            String author = handBookMeta.getAuthor();
-                            BannedWordDetection detection = filterTextWithDetection(author);
-                            String filteredAuthor = detection.getFilteredText();
-                            if (!author.equals(filteredAuthor)) {
-                                handBookMeta.setAuthor(filteredAuthor);
-                                needUpdate = true;
-                            }
-                        }
-
-                        if (handBookMeta.hasPages()) {
-                            List<String> bookPageTexts = new ArrayList<>();
-                            for (Component page : handBookMeta.pages()) {
-                                bookPageTexts.add(legacySerializer.serialize(page));
-                            }
-
-                            int[] bookPositions = new int[bookPageTexts.size()];
-                            String bookCombinedText = combineLinesWithNewlines(bookPageTexts.toArray(new String[0]), bookPositions);
-                            BannedWordDetection bookCombinedDetection = filterTextWithDetection(bookCombinedText);
-
-                            if (!bookCombinedText.equals(bookCombinedDetection.getFilteredText())) {
-                                String filteredCombined = bookCombinedDetection.getFilteredText();
-                                String[] filteredLines = splitTextToLines(filteredCombined, bookPositions, bookPageTexts.size());
-                                for (int i = 0; i < filteredLines.length; i++) {
-                                    String filteredPage = filteredLines[i] != null ? filteredLines[i] : "";
-                                    newPages.add(legacySerializer.deserialize(filteredPage));
-                                }
-                                handBookMeta.pages(newPages);
-                                needUpdate = true;
-                            } else {
-                                for (Component page : handBookMeta.pages()) {
-                                    String pageText = legacySerializer.serialize(page);
-                                    BannedWordDetection detection = filterTextWithDetection(pageText);
-                                    String filteredPage = detection.getFilteredText();
-                                    if (!pageText.equals(filteredPage)) {
-                                        needUpdate = true;
-                                    }
-                                    newPages.add(legacySerializer.deserialize(filteredPage));
-                                }
-                                handBookMeta.pages(newPages);
-                            }
-                        }
-
-                        if (needUpdate) {
-                            item.setItemMeta(handBookMeta);
-                            player.getInventory().setItem(slot, item);
-                        }
-                    }
-                }
-            }, 1);
+        if (titleFound) {
+            bookMeta.title(legacySerializer.deserialize(titleDetection.getFilteredText()));
         }
+
+        if (authorFound) {
+            bookMeta.setAuthor(authorDetection.getFilteredText());
+        }
+
+        event.setNewBookMeta(bookMeta);
+    }
+
+    /**
+     * 对文本执行违禁词检测，并在首次替换后反复复核处理后的文本，直到结果稳定。
+     * 例如 "傻傻逼逼" 经一次替换可能得到 "*傻*逼"，此时 "傻*逼" 仍可匹配违禁词，
+     * 需再次检测直至无违禁词残留。
+     * 由于 {@link TextProcessor#replaceInOriginalWithMask} 为 1:1 字符替换，
+     * 文本长度保持不变，位置映射不受影响。
+     */
+    private BannedWordDetection filterTextWithRecheck(String text) {
+        ConfigManager config = plugin.getConfigManager();
+        return ColorCodeUtils.filterAllWithRecheck(text, config.getBannedWordsByLevel(),
+                config.isFuzzyMatchEnable(), config.getDefaultMaxCharGap(),
+                config.getMaxCharGapByLevel(), config.isReverseMatchEnable(),
+                config.getReverseMatchByLevel(), config.getWhitelist());
     }
 
     /**
@@ -326,7 +294,14 @@ public class TextFilterListener implements Listener {
             // 确保边界有效
             start = Math.max(0, Math.min(start, text.length()));
             end = Math.max(start, Math.min(end, text.length()));
-            
+
+            // 排除 combineLinesWithNewlines 在页面间添加的换行分隔符。
+            // 该 \n 是分隔符而非页面原始内容，若保留会导致页面多出空行。
+            // 仅在非末页且边界处确为 \n 时排除，避免误删页面内容自身的换行。
+            if (i < maxLines - 1 && end > start && end <= text.length() && text.charAt(end - 1) == '\n') {
+                end--;
+            }
+
             lines[i] = text.substring(start, end);
         }
         
