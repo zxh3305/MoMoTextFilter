@@ -27,7 +27,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
-@Plugin(id = "momotextfilter", name = "MoMoTextFilter-Velocity", version = "2.0.0",
+@Plugin(id = "momotextfilter", name = "MoMoTextFilter-Velocity", version = "2.0.2",
         description = "违禁词过滤器插件 (Velocity端)",
         authors = {"MoMoCraft"})
 public class TextFilterVelocity {
