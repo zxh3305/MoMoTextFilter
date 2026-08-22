@@ -34,8 +34,10 @@ public class CrossMessageTracker {
             for (String bannedWord : entry.getValue()) {
                 if (bannedWord == null || bannedWord.isEmpty()) continue;
 
-                if (containsBannedWord(strippedText, bannedWord, level)) {
-                    results.add(new TrackingResult(true, false, bannedWord, level, context));
+                // 返回实际匹配到的文本（反向匹配时为反转词），避免与检测流程的提示词重复
+                String matchedWord = matchBannedWord(strippedText, bannedWord, level);
+                if (matchedWord != null) {
+                    results.add(new TrackingResult(true, false, matchedWord, level, context));
                 }
             }
         }
@@ -61,8 +63,9 @@ public class CrossMessageTracker {
                                 break;
                             }
                         }
-                        if (suffixMatch || containsBannedWord(strippedText, state.bannedWord, state.level)) {
-                            results.add(new TrackingResult(true, true, state.bannedWord, state.level, context));
+                        String matchedWord = matchBannedWord(strippedText, state.bannedWord, state.level);
+                        if (suffixMatch || matchedWord != null) {
+                            results.add(new TrackingResult(true, true, matchedWord != null ? matchedWord : state.bannedWord, state.level, context));
                         }
                         state.lastUpdateTime = System.currentTimeMillis();
                     }
@@ -153,24 +156,28 @@ public class CrossMessageTracker {
                 .add(new TrackingState(bannedWord, level, currentPosition));
     }
 
-    private boolean containsBannedWord(String text, String bannedWord, String level) {
+    /**
+     * 返回实际匹配到的违禁词文本：正向命中返回配置词，反向命中返回反转词，未命中返回 null。
+     * 使用实际匹配文本作为提示词，避免与检测流程检出的反向词重复提示。
+     */
+    private String matchBannedWord(String text, String bannedWord, String level) {
         ConfigManager config = plugin.getConfigManager();
         boolean fuzzyMatch = config.isFuzzyMatchEnable();
-        int maxCharGap = config.getMaxCharGapForLevel(level);
+        CharGapLimits limits = config.getMaxCharGapForLevel(level);
         boolean reverseMatch = config.isReverseMatchEnable() && config.isReverseMatchEnableForLevel(level);
 
-        if (ColorCodeUtils.containsBannedWord(text, bannedWord, fuzzyMatch, maxCharGap, config.getWhitelist())) {
-            return true;
+        if (ColorCodeUtils.containsBannedWord(text, bannedWord, fuzzyMatch, limits, config.getWhitelist())) {
+            return bannedWord;
         }
 
         if (reverseMatch && bannedWord.length() >= 2) {
             String reversedWord = ColorCodeUtils.reverseWord(bannedWord);
-            if (ColorCodeUtils.containsBannedWord(text, reversedWord, fuzzyMatch, maxCharGap, config.getWhitelist())) {
-                return true;
+            if (ColorCodeUtils.containsBannedWord(text, reversedWord, fuzzyMatch, limits, config.getWhitelist())) {
+                return reversedWord;
             }
         }
 
-        return false;
+        return null;
     }
 
     private void cleanupExpired(UUID playerId) {
