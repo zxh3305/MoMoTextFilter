@@ -1,7 +1,18 @@
+pluginManagement {
+    repositories {
+        maven { url = 'https://maven.fabricmc.net/' }
+        gradlePluginPortal()
+        mavenCentral()
+    }
+}
+
 rootProject.name = 'MoMoTextFilter'
 
 include 'bukkit'
 include 'velocity'
+include 'fabric'
 
 project(':bukkit').projectDir = new File(settingsDir, 'bukkit')
 project(':velocity').projectDir = new File(settingsDir, 'velocity')
+project(':fabric').projectDir = new File(settingsDir, 'fabric')
+
