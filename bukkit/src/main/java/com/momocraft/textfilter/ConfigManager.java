@@ -16,11 +16,11 @@ public class ConfigManager {
     private String language;
     private List<String> bannedWords;
     private Map<String, List<String>> bannedWordsByLevel;
-    private Map<String, Integer> maxCharGapByLevel;
+    private Map<String, CharGapLimits> maxCharGapLimitsByLevel;
     private boolean fuzzyMatchEnable;
     private boolean reverseMatchEnable;
     private Map<String, Boolean> reverseMatchByLevel;
-    private int defaultMaxCharGap;
+    private CharGapLimits defaultMaxCharGap;
     private Map<String, Integer> maxChatboxGapByLevel;
     private List<String> whitelist;
     private Map<String, Map<Integer, List<String>>> punishCommands;
@@ -48,7 +48,7 @@ public class ConfigManager {
             }
         }
 
-        maxCharGapByLevel = new HashMap<>();
+        maxCharGapLimitsByLevel = new HashMap<>();
         fuzzyMatchEnable = config.getBoolean("fuzzy-match.enable", true);
         reverseMatchEnable = config.getBoolean("reverse-match.enable", true);
 
@@ -56,13 +56,12 @@ public class ConfigManager {
         ConfigurationSection fuzzyLevelsSection = config.getConfigurationSection("fuzzy-match.levels");
         if (fuzzyLevelsSection != null) {
             for (String level : fuzzyLevelsSection.getKeys(false)) {
-                int charGap = fuzzyLevelsSection.getInt(level + ".max-char-gap", 2);
-                maxCharGapByLevel.put(level, charGap);
+                maxCharGapLimitsByLevel.put(level, parseCharGapLimits(fuzzyLevelsSection, level));
                 int chatboxGap = fuzzyLevelsSection.getInt(level + ".max-chatbox-gap", 0);
                 maxChatboxGapByLevel.put(level, chatboxGap);
             }
         }
-        defaultMaxCharGap = 2;
+        defaultMaxCharGap = CharGapLimits.uniform(2);
 
         reverseMatchByLevel = new HashMap<>();
         ConfigurationSection reverseLevelsSection = config.getConfigurationSection("reverse-match.levels");
@@ -152,12 +151,12 @@ public class ConfigManager {
         return bannedWordsByLevel != null ? bannedWordsByLevel : new HashMap<>();
     }
 
-    public int getMaxCharGapForLevel(String level) {
-        return maxCharGapByLevel.getOrDefault(level, defaultMaxCharGap);
+    public CharGapLimits getMaxCharGapForLevel(String level) {
+        return maxCharGapLimitsByLevel.getOrDefault(level, defaultMaxCharGap);
     }
 
-    public Map<String, Integer> getMaxCharGapByLevel() {
-        return maxCharGapByLevel != null ? maxCharGapByLevel : new HashMap<>();
+    public Map<String, CharGapLimits> getMaxCharGapByLevel() {
+        return maxCharGapLimitsByLevel != null ? maxCharGapLimitsByLevel : new HashMap<>();
     }
 
     public boolean isReverseMatchEnableForLevel(String level) {
@@ -188,7 +187,7 @@ public class ConfigManager {
         return fuzzyMatchEnable;
     }
 
-    public int getDefaultMaxCharGap() {
+    public CharGapLimits getDefaultMaxCharGap() {
         return defaultMaxCharGap;
     }
 
@@ -231,5 +230,26 @@ public class ConfigManager {
 
     public String getContextName(String typeName) {
         return messageManager.getMessage("context-names." + typeName, typeName);
+    }
+
+    /**
+     * 解析 max-char-gap 配置，兼容两种格式：
+     * <pre>
+     *   max-char-gap: 2                                   # 旧版单值，三类上限相同
+     *   max-char-gap:                                     # 新版按类型分别设置
+     *     chinese: 3
+     *     english: 50
+     *     others: 300
+     * </pre>
+     */
+    private static CharGapLimits parseCharGapLimits(ConfigurationSection fuzzyLevelsSection, String level) {
+        ConfigurationSection gapSection = fuzzyLevelsSection.getConfigurationSection(level + ".max-char-gap");
+        if (gapSection != null) {
+            int chinese = gapSection.getInt("chinese", 2);
+            int english = gapSection.getInt("english", 2);
+            int others = gapSection.getInt("others", 2);
+            return new CharGapLimits(chinese, english, others);
+        }
+        return CharGapLimits.uniform(fuzzyLevelsSection.getInt(level + ".max-char-gap", 2));
     }
 }
