@@ -1,1 +1,0 @@
-{"id":"momotextfilter","name":"MoMoTextFilter-Velocity","version":"2.0.0","description":"违禁词过滤器插件 (Velocity端)","authors":["MoMoCraft"],"dependencies":[],"main":"com.momocraft.textfilter.TextFilterVelocity"}
