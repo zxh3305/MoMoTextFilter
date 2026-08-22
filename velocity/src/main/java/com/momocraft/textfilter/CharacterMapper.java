@@ -5,17 +5,27 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 字符映射表工具类。
  * 从 charmap 目录下的映射表文件加载等价字符组，
  * 将同一行的所有字符视为等价，映射到第一个基准字符。
  * 例如 "ｆｕｃｋ" 会被映射为 "fuck"，"你媽" 映射为 "你妈"。
+ * <p>
+ * 同时提供字符分类能力（{@link #classify(char)}），
+ * 用于模糊匹配时按字符类型（中文/英文/其他）分别统计间隔字符数量。
  */
 public class CharacterMapper {
 
+    /** 字符类型：中文、英文、其他（数字/标点/符号等） */
+    public enum CharType { CHINESE, ENGLISH, OTHERS }
+
     private static final Map<Character, Character> CHAR_MAP = new HashMap<>();
+    private static final Set<Character> CHINESE_CHARS = new HashSet<>();
+    private static final Set<Character> ENGLISH_CHARS = new HashSet<>();
     private static volatile boolean initialized = false;
 
     private static synchronized void initialize() {
@@ -37,6 +47,8 @@ public class CharacterMapper {
     }
 
     private static void loadFile(String resourcePath) {
+        boolean isChineseFile = resourcePath.contains("中文");
+        boolean isEnglishFile = resourcePath.contains("英文");
         try (InputStream is = CharacterMapper.class.getResourceAsStream(resourcePath)) {
             if (is == null) return;
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
@@ -51,7 +63,7 @@ public class CharacterMapper {
                             continue;
                         }
                     }
-                    parseLine(line);
+                    parseLine(line, isChineseFile, isEnglishFile);
                 }
             }
         } catch (Exception e) {
@@ -59,7 +71,7 @@ public class CharacterMapper {
         }
     }
 
-    private static void parseLine(String line) {
+    private static void parseLine(String line, boolean isChineseFile, boolean isEnglishFile) {
         String[] columns = line.split(",");
         if (columns.length < 2) return;
 
@@ -79,6 +91,16 @@ public class CharacterMapper {
                         base = c;
                     }
                     CHAR_MAP.putIfAbsent(c, base);
+                    // 同时登记大小写两种形式，保证分类时对大小写不敏感
+                    if (isChineseFile) {
+                        CHINESE_CHARS.add(c);
+                        CHINESE_CHARS.add(Character.toLowerCase(c));
+                        CHINESE_CHARS.add(Character.toUpperCase(c));
+                    } else if (isEnglishFile) {
+                        ENGLISH_CHARS.add(c);
+                        ENGLISH_CHARS.add(Character.toLowerCase(c));
+                        ENGLISH_CHARS.add(Character.toUpperCase(c));
+                    }
                 }
             }
         }
@@ -98,6 +120,35 @@ public class CharacterMapper {
             sb.append(mapped != null ? mapped : c);
         }
         return sb.toString();
+    }
+
+    /**
+     * 分类一个字符的类型（用于按类型统计模糊匹配的间隔字符）。
+     * 中文一二级字表内的字符（含常见 CJK 区间回退）视为中文，
+     * 英文字表内的字符（含 ASCII 字母回退）视为英文，
+     * 其余（数字、标点、符号、表情等）视为其他。
+     */
+    public static CharType classify(char c) {
+        if (!initialized) {
+            initialize();
+        }
+        if (CHINESE_CHARS.contains(c) || isCjk(c)) {
+            return CharType.CHINESE;
+        }
+        if (isAsciiLetter(c) || ENGLISH_CHARS.contains(c)) {
+            return CharType.ENGLISH;
+        }
+        return CharType.OTHERS;
+    }
+
+    private static boolean isCjk(char c) {
+        return (c >= 0x3400 && c <= 0x4DBF)   // CJK 扩展A
+                || (c >= 0x4E00 && c <= 0x9FFF) // CJK 统一表意文字
+                || (c >= 0xF900 && c <= 0xFAFF); // CJK 兼容表意文字
+    }
+
+    private static boolean isAsciiLetter(char c) {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
     }
 
     public static boolean isInitialized() {
