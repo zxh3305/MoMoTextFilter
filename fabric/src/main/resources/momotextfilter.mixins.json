@@ -1,0 +1,15 @@
+{
+	"required": true,
+	"package": "com.momocraft.textfilter.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"mixins": [
+		"ChatMessageMixin",
+		"SignBlockEntityMixin",
+		"BookEditMixin",
+		"AnvilMenuMixin",
+		"CommandExecutionMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}

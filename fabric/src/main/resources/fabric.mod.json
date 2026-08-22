@@ -1,0 +1,30 @@
+{
+	"schemaVersion": 1,
+	"id": "momotextfilter",
+	"version": "${version}",
+	"name": "MoMoTextFilter",
+	"description": "Advanced text filter for Minecraft servers - detects and filters banned words in chat, signs, books, anvils, and commands",
+	"authors": [
+		"MoMoCraft"
+	],
+	"contact": {
+		"homepage": "https://momocraft.com"
+	},
+	"license": "All Rights Reserved",
+	"icon": "assets/momotextfilter/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"com.momocraft.textfilter.MoMoTextFilterMod"
+		]
+	},
+	"mixins": [
+		"momotextfilter.mixins.json"
+	],
+	"depends": {
+		"fabricloader": ">=0.19.3",
+		"minecraft": "~26.1.2",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}
