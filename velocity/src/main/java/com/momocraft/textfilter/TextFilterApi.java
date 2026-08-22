@@ -72,12 +72,12 @@ public class TextFilterApi {
 
     private static String filterSingleMessage(String message, ConfigManagerVelocity config) {
         boolean fuzzyMatch = config.isFuzzyMatchEnable();
-        int defaultMaxCharGap = config.getDefaultMaxCharGap();
+        CharGapLimits defaultLimits = config.getDefaultMaxCharGap();
         boolean reverseMatch = config.isReverseMatchEnable();
 
-        BannedWordDetection detection = ColorCodeUtils.filterAllBannedWordsWithDetection(message,
+        BannedWordDetection detection = ColorCodeUtils.filterAllWithRecheck(message,
                 config.getBannedWordsByLevel(),
-                fuzzyMatch, defaultMaxCharGap, config.getMaxCharGapByLevel(),
+                fuzzyMatch, defaultLimits, config.getMaxCharGapByLevel(),
                 reverseMatch, config.getReverseMatchByLevel(), config.getWhitelist());
         return detection.getFilteredText();
     }
@@ -88,11 +88,12 @@ public class TextFilterApi {
         }
 
         boolean fuzzyMatch = config.isFuzzyMatchEnable();
-        int defaultMaxCharGap = config.getDefaultMaxCharGap();
+        CharGapLimits defaultLimits = config.getDefaultMaxCharGap();
         boolean reverseMatch = config.isReverseMatchEnable();
 
-        return ColorCodeUtils.filterAllBannedWordsWithDetection(text, config.getBannedWordsByLevel(),
-                fuzzyMatch, defaultMaxCharGap, config.getMaxCharGapByLevel(),
+        // 使用 filterAllWithRecheck：替换后继续复核，检出二次组合的违禁词（如 "傻他妈的逼" 中的 "他妈"）
+        return ColorCodeUtils.filterAllWithRecheck(text, config.getBannedWordsByLevel(),
+                fuzzyMatch, defaultLimits, config.getMaxCharGapByLevel(),
                 reverseMatch, config.getReverseMatchByLevel(), config.getWhitelist());
     }
 

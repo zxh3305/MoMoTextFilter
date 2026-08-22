@@ -27,7 +27,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
-@Plugin(id = "momotextfilter", name = "MoMoTextFilter-Velocity", version = "2.0.2",
+@Plugin(id = "momotextfilter", name = "MoMoTextFilter-Velocity", version = "2.0.3",
         description = "违禁词过滤器插件 (Velocity端)",
         authors = {"MoMoCraft"})
 public class TextFilterVelocity {
@@ -294,11 +294,12 @@ public class TextFilterVelocity {
         }
 
         boolean fuzzyMatch = config.isFuzzyMatchEnable();
-        int defaultMaxCharGap = config.getDefaultMaxCharGap();
+        CharGapLimits defaultLimits = config.getDefaultMaxCharGap();
         boolean reverseMatch = config.isReverseMatchEnable();
 
-        return ColorCodeUtils.filterAllBannedWordsWithDetection(text, config.getBannedWordsByLevel(),
-                fuzzyMatch, defaultMaxCharGap, config.getMaxCharGapByLevel(),
+        // 使用 filterAllWithRecheck：替换后继续复核，满足 "傻他妈的逼" -> "*他妈的*" 后再检出 "他妈"
+        return ColorCodeUtils.filterAllWithRecheck(text, config.getBannedWordsByLevel(),
+                fuzzyMatch, defaultLimits, config.getMaxCharGapByLevel(),
                 reverseMatch, config.getReverseMatchByLevel(), config.getWhitelist());
     }
 
