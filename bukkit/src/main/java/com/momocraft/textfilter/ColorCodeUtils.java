@@ -2,6 +2,7 @@ package com.momocraft.textfilter;
 
 import java.text.Normalizer;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -9,7 +10,7 @@ import java.util.regex.Pattern;
 
 public class ColorCodeUtils {
 
-    private static final Pattern MINIMESSAGE_TAG = Pattern.compile("</?[^>]+>");
+    private static final Pattern MINIMESSAGE_TAG = Pattern.compile("</?[a-zA-Z0-9_]+(:[^>]*)?>");
     private static final Pattern AND_X_COLOR_CODE = Pattern.compile("&x&([0-9a-fA-F])&([0-9a-fA-F])&([0-9a-fA-F])&([0-9a-fA-F])&([0-9a-fA-F])&([0-9a-fA-F])");
     private static final Pattern LEGACY_COLOR_CODES = Pattern.compile("[§&][0-9a-fA-FklmnorxX]");
     private static final Pattern MINIMESSAGE_COLOR_TAGS = Pattern.compile("<#[0-9a-fA-F]{3,6}>");
@@ -70,7 +71,7 @@ public class ColorCodeUtils {
         return text.toLowerCase();
     }
 
-    public static boolean containsBannedWord(String text, String bannedWord, boolean fuzzyMatch, int maxCharGap, Iterable<String> whitelist) {
+    public static boolean containsBannedWord(String text, String bannedWord, boolean fuzzyMatch, CharGapLimits limits, Iterable<String> whitelist) {
         if (text == null || bannedWord == null || bannedWord.isEmpty()) {
             return false;
         }
@@ -93,24 +94,45 @@ public class ColorCodeUtils {
             return false;
         }
 
-        return fuzzyContainsBannedWord(normalizedText, normalizedBanned, maxCharGap, whitelist);
+        return fuzzyContainsBannedWord(normalizedText, normalizedBanned, limits, whitelist);
     }
 
-    private static boolean fuzzyContainsBannedWord(String text, String bannedWord, int maxCharGap, Iterable<String> whitelist) {
-        for (int start = 0; start <= text.length() - bannedWord.length(); start++) {
+    private static boolean fuzzyContainsBannedWord(String text, String bannedWord, CharGapLimits limits, Iterable<String> whitelist) {
+        int maxGap = Math.max(limits.chinese, Math.max(limits.english, limits.others));
+        int maxScanDist = bannedWord.length() + maxGap;
+        // 只从违禁词首字符出现的位置开始扫描，避免 O(n^2) 卡死 watchdog
+        int start = 0;
+        char firstChar = bannedWord.charAt(0);
+        int maxStart = text.length() - bannedWord.length();
+
+        while (start <= maxStart) {
+            int idx = text.indexOf(firstChar, start);
+            if (idx < 0 || idx > maxStart) break;
+            start = idx;
+
             int textIndex = start;
             int bannedIndex = 0;
             int matchedEnd = -1;
+            int chineseGap = 0, englishGap = 0, othersGap = 0;
+            int maxEnd = Math.min(text.length(), start + maxScanDist);
 
-            while (textIndex < text.length() && bannedIndex < bannedWord.length()) {
+            while (textIndex < maxEnd && bannedIndex < bannedWord.length()) {
                 if (text.charAt(textIndex) == bannedWord.charAt(bannedIndex)) {
                     bannedIndex++;
                     if (bannedIndex == bannedWord.length()) {
                         matchedEnd = textIndex + 1;
                         break;
                     }
-                } else if (textIndex - start - bannedIndex >= maxCharGap) {
-                    break;
+                } else {
+                    switch (CharacterMapper.classify(text.charAt(textIndex))) {
+                        case CHINESE: chineseGap++; break;
+                        case ENGLISH: englishGap++; break;
+                        default: othersGap++; break;
+                    }
+                    // 任意一类间隔字符超过对应上限即放弃该窗口（放行）
+                    if (chineseGap > limits.chinese || englishGap > limits.english || othersGap > limits.others) {
+                        break;
+                    }
                 }
                 textIndex++;
             }
@@ -120,30 +142,52 @@ public class ColorCodeUtils {
                     return true;
                 }
             }
+            start = idx + 1;
         }
 
-        return fuzzyContainsWithCompression(text, bannedWord, maxCharGap, whitelist);
+        return fuzzyContainsWithCompression(text, bannedWord, limits, whitelist);
     }
 
-    private static boolean fuzzyContainsWithCompression(String text, String bannedWord, int maxCharGap, Iterable<String> whitelist) {
+    private static boolean fuzzyContainsWithCompression(String text, String bannedWord, CharGapLimits limits, Iterable<String> whitelist) {
         StringBuilder compressedBuilder = new StringBuilder();
         int[] compressedToOriginal = compressRepeatingChars(text, compressedBuilder);
         String compressedText = compressedBuilder.toString();
+        if (compressedText.length() < bannedWord.length()) return false;
 
-        for (int start = 0; start <= compressedText.length() - bannedWord.length(); start++) {
+        int maxGap = Math.max(limits.chinese, Math.max(limits.english, limits.others));
+        int maxScanDist = bannedWord.length() + maxGap;
+        // 只从首字符出现位置开始扫描
+        int start = 0;
+        char firstChar = bannedWord.charAt(0);
+        int maxStart = compressedText.length() - bannedWord.length();
+
+        while (start <= maxStart) {
+            int idx = compressedText.indexOf(firstChar, start);
+            if (idx < 0 || idx > maxStart) break;
+            start = idx;
+
             int textIndex = start;
             int bannedIndex = 0;
             int matchedEnd = -1;
+            int chineseGap = 0, englishGap = 0, othersGap = 0;
+            int maxEnd = Math.min(compressedText.length(), start + maxScanDist);
 
-            while (textIndex < compressedText.length() && bannedIndex < bannedWord.length()) {
+            while (textIndex < maxEnd && bannedIndex < bannedWord.length()) {
                 if (compressedText.charAt(textIndex) == bannedWord.charAt(bannedIndex)) {
                     bannedIndex++;
                     if (bannedIndex == bannedWord.length()) {
                         matchedEnd = textIndex + 1;
                         break;
                     }
-                } else if (textIndex - start - bannedIndex >= maxCharGap) {
-                    break;
+                } else {
+                    switch (CharacterMapper.classify(compressedText.charAt(textIndex))) {
+                        case CHINESE: chineseGap++; break;
+                        case ENGLISH: englishGap++; break;
+                        default: othersGap++; break;
+                    }
+                    if (chineseGap > limits.chinese || englishGap > limits.english || othersGap > limits.others) {
+                        break;
+                    }
                 }
                 textIndex++;
             }
@@ -155,6 +199,7 @@ public class ColorCodeUtils {
                     return true;
                 }
             }
+            start = idx + 1;
         }
 
         return false;
@@ -199,7 +244,7 @@ public class ColorCodeUtils {
         return false;
     }
 
-    public static String replaceBannedWord(String text, String bannedWord, boolean fuzzyMatch, int maxCharGap, Iterable<String> whitelist) {
+    public static String replaceBannedWord(String text, String bannedWord, boolean fuzzyMatch, CharGapLimits limits, Iterable<String> whitelist) {
         if (text == null || bannedWord == null || bannedWord.isEmpty()) {
             return text;
         }
@@ -224,8 +269,14 @@ public class ColorCodeUtils {
                 index += 1;
             }
         } else {
-            findFuzzyMatches(normalizedText, normalizedBanned, maxCharGap, whitelist, toReplace);
-            findFuzzyMatchesWithCompression(normalizedText, normalizedBanned, maxCharGap, whitelist, toReplace);
+            List<MatchCandidate> candidates = new ArrayList<>();
+            collectFuzzyMatches(normalizedText, normalizedBanned, limits, whitelist, bannedWord, "default", candidates);
+            collectFuzzyMatchesWithCompression(normalizedText, normalizedBanned, limits, whitelist, bannedWord, "default", candidates);
+            for (MatchCandidate candidate : candidates) {
+                for (int pos : candidate.positions) {
+                    toReplace[pos] = true;
+                }
+            }
         }
 
         TextProcessor processor = new TextProcessor(text);
@@ -239,73 +290,42 @@ public class ColorCodeUtils {
         return new StringBuilder(word).reverse().toString();
     }
 
+    public static String filterAllBannedWords(String text, Iterable<String> bannedWords,
+            boolean fuzzyMatch, CharGapLimits limits, boolean reverseMatch, Iterable<String> whitelist) {
+        if (text == null) {
+            return null;
+        }
+        Map<String, List<String>> bannedWordsByLevel = new HashMap<>();
+        List<String> wordList = new ArrayList<>();
+        bannedWords.forEach(word -> {
+            if (word != null && !word.isEmpty()) {
+                wordList.add(word);
+            }
+        });
+        bannedWordsByLevel.put("default", wordList);
+        Map<String, CharGapLimits> limitsByLevel = new HashMap<>();
+        limitsByLevel.put("default", limits);
+        Map<String, Boolean> reverseMatchByLevel = new HashMap<>();
+        reverseMatchByLevel.put("default", reverseMatch);
+        BannedWordDetection detection = filterAllBannedWordsWithDetection(text, bannedWordsByLevel,
+                fuzzyMatch, limits, limitsByLevel, reverseMatch, reverseMatchByLevel, whitelist);
+        return detection.getFilteredText();
+    }
+
     public static String filterAllBannedWords(String text, Map<String, List<String>> bannedWordsByLevel,
-            boolean fuzzyMatch, int defaultMaxCharGap, Map<String, Integer> maxCharGapByLevel,
+            boolean fuzzyMatch, CharGapLimits defaultLimits, Map<String, CharGapLimits> limitsByLevel,
             boolean reverseMatch, Map<String, Boolean> reverseMatchByLevel, Iterable<String> whitelist) {
         if (text == null) {
             return null;
         }
-
-        String normalizedText = normalizeText(text);
-        boolean[] toReplace = new boolean[normalizedText.length()];
-
-        for (Map.Entry<String, List<String>> entry : bannedWordsByLevel.entrySet()) {
-            String level = entry.getKey();
-            int maxCharGap = maxCharGapByLevel.getOrDefault(level, defaultMaxCharGap);
-            boolean levelReverseMatch = reverseMatch && (reverseMatchByLevel == null ||
-                    reverseMatchByLevel.getOrDefault(level, true));
-
-            for (String bannedWord : entry.getValue()) {
-                if (bannedWord == null || bannedWord.isEmpty()) continue;
-
-                String normalizedBanned = normalizeText(bannedWord);
-                if (normalizedBanned.isEmpty()) continue;
-
-                if (!fuzzyMatch) {
-                    int index = 0;
-                    while ((index = normalizedText.indexOf(normalizedBanned, index)) != -1) {
-                        if (!isInWhitelistRange(index, index + normalizedBanned.length(), normalizedText, whitelist)) {
-                            for (int i = 0; i < normalizedBanned.length(); i++) {
-                                toReplace[index + i] = true;
-                            }
-                        }
-                        index += 1;
-                    }
-                } else {
-                    findFuzzyMatches(normalizedText, normalizedBanned, maxCharGap, whitelist, toReplace);
-                    findFuzzyMatchesWithCompression(normalizedText, normalizedBanned, maxCharGap, whitelist, toReplace);
-                }
-
-                if (levelReverseMatch && bannedWord.length() >= 2) {
-                    String reversedWord = reverseWord(bannedWord);
-                    String normalizedReversed = normalizeText(reversedWord);
-                    if (normalizedReversed.isEmpty()) continue;
-
-                    if (!fuzzyMatch) {
-                        int index = 0;
-                        while ((index = normalizedText.indexOf(normalizedReversed, index)) != -1) {
-                            if (!isInWhitelistRange(index, index + normalizedReversed.length(), normalizedText, whitelist)) {
-                                for (int i = 0; i < normalizedReversed.length(); i++) {
-                                    toReplace[index + i] = true;
-                                }
-                            }
-                            index += 1;
-                        }
-                    } else {
-                        findFuzzyMatches(normalizedText, normalizedReversed, maxCharGap, whitelist, toReplace);
-                        findFuzzyMatchesWithCompression(normalizedText, normalizedReversed, maxCharGap, whitelist, toReplace);
-                    }
-                }
-            }
-        }
-
-        TextProcessor processor = new TextProcessor(text);
-        return processor.replaceInOriginalWithMask(toReplace, "*");
+        BannedWordDetection detection = filterAllBannedWordsWithDetection(text, bannedWordsByLevel,
+                fuzzyMatch, defaultLimits, limitsByLevel, reverseMatch, reverseMatchByLevel, whitelist);
+        return detection.getFilteredText();
     }
 
     public static BannedWordDetection filterAllBannedWordsWithDetection(String text,
             Map<String, List<String>> bannedWordsByLevel,
-            boolean fuzzyMatch, int defaultMaxCharGap, Map<String, Integer> maxCharGapByLevel,
+            boolean fuzzyMatch, CharGapLimits defaultLimits, Map<String, CharGapLimits> limitsByLevel,
             boolean reverseMatch, Map<String, Boolean> reverseMatchByLevel, Iterable<String> whitelist) {
         if (text == null) {
             return new BannedWordDetection(null);
@@ -320,9 +340,14 @@ public class ColorCodeUtils {
         boolean[] toReplace = new boolean[processedText.length()];
         BannedWordDetection result = new BannedWordDetection(text);
 
+        // 收集所有候选匹配区间（精确匹配 + 模糊匹配 + 压缩匹配 + 反向匹配），
+        // 最后统一做"非重叠"贪心选择：重叠的区间只保留最左优先的一个，
+        // 避免 "你他妈" 同时命中 "你妈" 与 "他妈" 重复报告/重复打码。
+        List<MatchCandidate> candidates = new ArrayList<>();
+
         for (Map.Entry<String, List<String>> entry : bannedWordsByLevel.entrySet()) {
             String level = entry.getKey();
-            int maxCharGap = maxCharGapByLevel.getOrDefault(level, defaultMaxCharGap);
+            CharGapLimits limits = limitsByLevel.getOrDefault(level, defaultLimits);
             boolean levelReverseMatch = reverseMatch && (reverseMatchByLevel == null ||
                     reverseMatchByLevel.getOrDefault(level, true));
 
@@ -332,30 +357,11 @@ public class ColorCodeUtils {
                 String normalizedBanned = CharacterMapper.normalize(java.text.Normalizer.normalize(stripAllFormatting(bannedWord), java.text.Normalizer.Form.NFKC).toLowerCase());
                 if (normalizedBanned.isEmpty()) continue;
 
-                boolean matched = false;
-
                 if (!fuzzyMatch) {
-                    int index = 0;
-                    while ((index = processedText.indexOf(normalizedBanned, index)) != -1) {
-                        if (!isInWhitelistRange(index, index + normalizedBanned.length(), processedText, whitelist)) {
-                            for (int i = 0; i < normalizedBanned.length(); i++) {
-                                toReplace[index + i] = true;
-                            }
-                            matched = true;
-                        }
-                        index += 1;
-                    }
+                    collectExactMatches(processedText, normalizedBanned, whitelist, bannedWord, level, candidates);
                 } else {
-                    if (findFuzzyMatches(processedText, normalizedBanned, maxCharGap, whitelist, toReplace)) {
-                        matched = true;
-                    }
-                    if (findFuzzyMatchesWithCompression(processedText, normalizedBanned, maxCharGap, whitelist, toReplace)) {
-                        matched = true;
-                    }
-                }
-
-                if (matched) {
-                    result.addDetectedWord(bannedWord, level);
+                    collectFuzzyMatches(processedText, normalizedBanned, limits, whitelist, bannedWord, level, candidates);
+                    collectFuzzyMatchesWithCompression(processedText, normalizedBanned, limits, whitelist, bannedWord, level, candidates);
                 }
 
                 if (levelReverseMatch && bannedWord.length() >= 2) {
@@ -363,32 +369,28 @@ public class ColorCodeUtils {
                     String normalizedReversed = CharacterMapper.normalize(java.text.Normalizer.normalize(stripAllFormatting(reversedWord), java.text.Normalizer.Form.NFKC).toLowerCase());
                     if (normalizedReversed.isEmpty()) continue;
 
-                    boolean reversedMatched = false;
-
                     if (!fuzzyMatch) {
-                        int index = 0;
-                        while ((index = processedText.indexOf(normalizedReversed, index)) != -1) {
-                            if (!isInWhitelistRange(index, index + normalizedReversed.length(), processedText, whitelist)) {
-                                for (int i = 0; i < normalizedReversed.length(); i++) {
-                                    toReplace[index + i] = true;
-                                }
-                                reversedMatched = true;
-                            }
-                            index += 1;
-                        }
+                        collectExactMatches(processedText, normalizedReversed, whitelist, reversedWord, level, candidates);
                     } else {
-                        if (findFuzzyMatches(processedText, normalizedReversed, maxCharGap, whitelist, toReplace)) {
-                            reversedMatched = true;
-                        }
-                        if (findFuzzyMatchesWithCompression(processedText, normalizedReversed, maxCharGap, whitelist, toReplace)) {
-                            reversedMatched = true;
-                        }
-                    }
-
-                    if (reversedMatched) {
-                        result.addDetectedWord(reversedWord, level);
+                        collectFuzzyMatches(processedText, normalizedReversed, limits, whitelist, reversedWord, level, candidates);
+                        collectFuzzyMatchesWithCompression(processedText, normalizedReversed, limits, whitelist, reversedWord, level, candidates);
                     }
                 }
+            }
+        }
+
+        // 非重叠贪心选择：按起点升序（同起点取覆盖更长者）排列，逐个选取不重叠的区间
+        candidates.sort((a, b) -> a.start != b.start
+                ? Integer.compare(a.start, b.start)
+                : Integer.compare(b.end, a.end));
+        int lastEnd = -1;
+        for (MatchCandidate candidate : candidates) {
+            if (candidate.start >= lastEnd) {
+                for (int pos : candidate.positions) {
+                    toReplace[pos] = true;
+                }
+                result.addDetectedWord(candidate.word, candidate.level);
+                lastEnd = candidate.end;
             }
         }
 
@@ -411,6 +413,149 @@ public class ColorCodeUtils {
             result.setFilteredText(filtered);
         }
         return result;
+    }
+
+    /** 收集精确（非模糊）匹配区间 */
+    private static void collectExactMatches(String text, String bannedWord, Iterable<String> whitelist,
+            String reportWord, String level, List<MatchCandidate> out) {
+        int index = 0;
+        while ((index = text.indexOf(bannedWord, index)) != -1) {
+            if (!isInWhitelistRange(index, index + bannedWord.length(), text, whitelist)) {
+                List<Integer> positions = new ArrayList<>();
+                for (int i = 0; i < bannedWord.length(); i++) {
+                    positions.add(index + i);
+                }
+                out.add(new MatchCandidate(index, index + bannedWord.length(), positions, reportWord, level));
+            }
+            index += 1;
+        }
+    }
+
+    /** 收集模糊匹配区间（按字符类型分别计数间隔字符，任一类超限即放行） */
+    private static void collectFuzzyMatches(String text, String bannedWord, CharGapLimits limits,
+            Iterable<String> whitelist, String reportWord, String level, List<MatchCandidate> out) {
+        int maxGap = Math.max(limits.chinese, Math.max(limits.english, limits.others));
+        int maxScanDist = bannedWord.length() + maxGap;
+        // 只从违禁词首字符出现的位置开始扫描，避免 O(n^2) 卡死 watchdog
+        int start = 0;
+        char firstChar = bannedWord.charAt(0);
+        int maxStart = text.length() - bannedWord.length();
+
+        while (start <= maxStart) {
+            int idx = text.indexOf(firstChar, start);
+            if (idx < 0 || idx > maxStart) break;
+            start = idx;
+
+            int textIndex = start;
+            int bannedIndex = 0;
+            int matchedEnd = -1;
+            int chineseGap = 0, englishGap = 0, othersGap = 0;
+            List<Integer> matchedPositions = new ArrayList<>();
+            int maxEnd = Math.min(text.length(), start + maxScanDist);
+
+            while (textIndex < maxEnd && bannedIndex < bannedWord.length()) {
+                if (text.charAt(textIndex) == bannedWord.charAt(bannedIndex)) {
+                    matchedPositions.add(textIndex);
+                    bannedIndex++;
+                    if (bannedIndex == bannedWord.length()) {
+                        matchedEnd = textIndex + 1;
+                        break;
+                    }
+                } else {
+                    switch (CharacterMapper.classify(text.charAt(textIndex))) {
+                        case CHINESE: chineseGap++; break;
+                        case ENGLISH: englishGap++; break;
+                        default: othersGap++; break;
+                    }
+                    // 任意一类间隔字符超过对应上限即放弃该窗口（放行）
+                    if (chineseGap > limits.chinese || englishGap > limits.english || othersGap > limits.others) {
+                        break;
+                    }
+                }
+                textIndex++;
+            }
+
+            if (matchedEnd > 0 && !isInWhitelistRange(start, matchedEnd, text, whitelist)) {
+                out.add(new MatchCandidate(start, matchedEnd, matchedPositions, reportWord, level));
+            }
+            start = idx + 1;
+        }
+    }
+
+    /** 收集压缩重复字符后的模糊匹配区间（"傻1111逼" 视作 "傻逼"） */
+    private static void collectFuzzyMatchesWithCompression(String text, String bannedWord, CharGapLimits limits,
+            Iterable<String> whitelist, String reportWord, String level, List<MatchCandidate> out) {
+        StringBuilder compressedBuilder = new StringBuilder();
+        int[] compressedToOriginal = compressRepeatingChars(text, compressedBuilder);
+        String compressedText = compressedBuilder.toString();
+        if (compressedText.length() < bannedWord.length()) return;
+
+        int maxGap = Math.max(limits.chinese, Math.max(limits.english, limits.others));
+        int maxScanDist = bannedWord.length() + maxGap;
+        // 只从首字符出现位置开始扫描
+        int start = 0;
+        char firstChar = bannedWord.charAt(0);
+        int maxStart = compressedText.length() - bannedWord.length();
+
+        while (start <= maxStart) {
+            int idx = compressedText.indexOf(firstChar, start);
+            if (idx < 0 || idx > maxStart) break;
+            start = idx;
+
+            int textIndex = start;
+            int bannedIndex = 0;
+            int matchedEnd = -1;
+            int chineseGap = 0, englishGap = 0, othersGap = 0;
+            List<Integer> matchedPositions = new ArrayList<>();
+            int maxEnd = Math.min(compressedText.length(), start + maxScanDist);
+
+            while (textIndex < maxEnd && bannedIndex < bannedWord.length()) {
+                if (compressedText.charAt(textIndex) == bannedWord.charAt(bannedIndex)) {
+                    matchedPositions.add(compressedToOriginal[textIndex]);
+                    bannedIndex++;
+                    if (bannedIndex == bannedWord.length()) {
+                        matchedEnd = textIndex + 1;
+                        break;
+                    }
+                } else {
+                    switch (CharacterMapper.classify(compressedText.charAt(textIndex))) {
+                        case CHINESE: chineseGap++; break;
+                        case ENGLISH: englishGap++; break;
+                        default: othersGap++; break;
+                    }
+                    if (chineseGap > limits.chinese || englishGap > limits.english || othersGap > limits.others) {
+                        break;
+                    }
+                }
+                textIndex++;
+            }
+
+            if (matchedEnd > 0) {
+                int origStart = compressedToOriginal[start];
+                int origEnd = compressedToOriginal[matchedEnd - 1] + 1;
+                if (!isInWhitelistRange(origStart, origEnd, text, whitelist)) {
+                    out.add(new MatchCandidate(origStart, origEnd, matchedPositions, reportWord, level));
+                }
+            }
+            start = idx + 1;
+        }
+    }
+
+    /** 候选匹配区间：用于非重叠贪心选择 */
+    private static class MatchCandidate {
+        final int start;      // 区间起点（processedText 索引）
+        final int end;        // 区间终点（不含）
+        final List<Integer> positions; // 需要打码的字符位置（仅违禁词字符本身，不含间隔字符）
+        final String word;    // 上报的违禁词
+        final String level;
+
+        MatchCandidate(int start, int end, List<Integer> positions, String word, String level) {
+            this.start = start;
+            this.end = end;
+            this.positions = positions;
+            this.word = word;
+            this.level = level;
+        }
     }
 
     /**
@@ -455,14 +600,14 @@ public class ColorCodeUtils {
      */
     public static BannedWordDetection filterAllWithRecheck(String text,
             Map<String, List<String>> bannedWordsByLevel,
-            boolean fuzzyMatch, int defaultMaxCharGap, Map<String, Integer> maxCharGapByLevel,
+            boolean fuzzyMatch, CharGapLimits defaultLimits, Map<String, CharGapLimits> limitsByLevel,
             boolean reverseMatch, Map<String, Boolean> reverseMatchByLevel, Iterable<String> whitelist) {
         if (text == null) {
             return new BannedWordDetection(null);
         }
 
         BannedWordDetection detection = filterAllBannedWordsWithDetection(text, bannedWordsByLevel,
-                fuzzyMatch, defaultMaxCharGap, maxCharGapByLevel, reverseMatch, reverseMatchByLevel, whitelist);
+                fuzzyMatch, defaultLimits, limitsByLevel, reverseMatch, reverseMatchByLevel, whitelist);
         String filtered = detection.getFilteredText();
         if (filtered == null || filtered.equals(text)) {
             return detection;
@@ -471,7 +616,7 @@ public class ColorCodeUtils {
         // 反复核处理后的文本，最多 5 次以防死循环
         for (int i = 0; i < 5; i++) {
             BannedWordDetection recheck = filterAllBannedWordsWithDetection(filtered, bannedWordsByLevel,
-                    fuzzyMatch, defaultMaxCharGap, maxCharGapByLevel, reverseMatch, reverseMatchByLevel, whitelist);
+                    fuzzyMatch, defaultLimits, limitsByLevel, reverseMatch, reverseMatchByLevel, whitelist);
             String next = recheck.getFilteredText();
             if (next.equals(filtered)) {
                 break;
@@ -486,82 +631,8 @@ public class ColorCodeUtils {
         return detection;
     }
 
-    private static boolean findFuzzyMatches(String text, String bannedWord, int maxCharGap, Iterable<String> whitelist, boolean[] toReplace) {
-        boolean matched = false;
-        for (int start = 0; start <= text.length() - bannedWord.length(); start++) {
-            int textIndex = start;
-            int bannedIndex = 0;
-            int matchedEnd = -1;
-            List<Integer> matchedPositions = new ArrayList<>();
-
-            while (textIndex < text.length() && bannedIndex < bannedWord.length()) {
-                if (text.charAt(textIndex) == bannedWord.charAt(bannedIndex)) {
-                    matchedPositions.add(textIndex);
-                    bannedIndex++;
-                    if (bannedIndex == bannedWord.length()) {
-                        matchedEnd = textIndex + 1;
-                        break;
-                    }
-                } else if (textIndex - start - bannedIndex >= maxCharGap) {
-                    break;
-                }
-                textIndex++;
-            }
-
-            if (matchedEnd > 0) {
-                if (!isInWhitelistRange(start, matchedEnd, text, whitelist)) {
-                    for (int pos : matchedPositions) {
-                        toReplace[pos] = true;
-                    }
-                    matched = true;
-                }
-            }
-        }
-        return matched;
-    }
-
-    private static boolean findFuzzyMatchesWithCompression(String text, String bannedWord, int maxCharGap, Iterable<String> whitelist, boolean[] toReplace) {
-        boolean matched = false;
-        StringBuilder compressedBuilder = new StringBuilder();
-        int[] compressedToOriginal = compressRepeatingChars(text, compressedBuilder);
-        String compressedText = compressedBuilder.toString();
-
-        for (int start = 0; start <= compressedText.length() - bannedWord.length(); start++) {
-            int textIndex = start;
-            int bannedIndex = 0;
-            int matchedEnd = -1;
-            List<Integer> matchedPositions = new ArrayList<>();
-
-            while (textIndex < compressedText.length() && bannedIndex < bannedWord.length()) {
-                if (compressedText.charAt(textIndex) == bannedWord.charAt(bannedIndex)) {
-                    matchedPositions.add(compressedToOriginal[textIndex]);
-                    bannedIndex++;
-                    if (bannedIndex == bannedWord.length()) {
-                        matchedEnd = textIndex + 1;
-                        break;
-                    }
-                } else if (textIndex - start - bannedIndex >= maxCharGap) {
-                    break;
-                }
-                textIndex++;
-            }
-
-            if (matchedEnd > 0) {
-                int origStart = compressedToOriginal[start];
-                int origEnd = compressedToOriginal[matchedEnd - 1] + 1;
-                if (!isInWhitelistRange(origStart, origEnd, text, whitelist)) {
-                    for (int pos : matchedPositions) {
-                        toReplace[pos] = true;
-                    }
-                    matched = true;
-                }
-            }
-        }
-        return matched;
-    }
-
     public static boolean containsAnyBannedWord(String text, Map<String, List<String>> bannedWordsByLevel,
-            boolean fuzzyMatch, int defaultMaxCharGap, Map<String, Integer> maxCharGapByLevel,
+            boolean fuzzyMatch, CharGapLimits defaultLimits, Map<String, CharGapLimits> limitsByLevel,
             boolean reverseMatch, Map<String, Boolean> reverseMatchByLevel, Iterable<String> whitelist) {
         if (text == null) {
             return false;
@@ -569,19 +640,19 @@ public class ColorCodeUtils {
 
         for (Map.Entry<String, List<String>> entry : bannedWordsByLevel.entrySet()) {
             String level = entry.getKey();
-            int maxCharGap = maxCharGapByLevel.getOrDefault(level, defaultMaxCharGap);
+            CharGapLimits limits = limitsByLevel.getOrDefault(level, defaultLimits);
             boolean levelReverseMatch = reverseMatch && (reverseMatchByLevel == null ||
                     reverseMatchByLevel.getOrDefault(level, true));
 
             for (String bannedWord : entry.getValue()) {
                 if (bannedWord != null && !bannedWord.isEmpty()) {
-                    if (containsBannedWord(text, bannedWord, fuzzyMatch, maxCharGap, whitelist)) {
+                    if (containsBannedWord(text, bannedWord, fuzzyMatch, limits, whitelist)) {
                         return true;
                     }
 
                     if (levelReverseMatch && bannedWord.length() >= 2) {
                         String reversedWord = reverseWord(bannedWord);
-                        if (containsBannedWord(text, reversedWord, fuzzyMatch, maxCharGap, whitelist)) {
+                        if (containsBannedWord(text, reversedWord, fuzzyMatch, limits, whitelist)) {
                             return true;
                         }
                     }
