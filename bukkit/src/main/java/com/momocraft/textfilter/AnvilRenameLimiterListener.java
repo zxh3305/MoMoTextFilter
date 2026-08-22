@@ -62,27 +62,17 @@ public class AnvilRenameLimiterListener implements Listener {
         boolean foundBannedWord = !displayName.equals(detection.getFilteredText());
 
         if (foundBannedWord) {
-            event.setCancelled(true);
+            // 不取消事件（取消事件仍会消耗经验等级），
+            // 改为将结果物品的显示名称替换为过滤后的版本，让玩家正常取走。
+            String filteredName = detection.getFilteredText();
+            meta.displayName(legacySerializer.deserialize(filteredName));
+            result.setItemMeta(meta);
+            // 同步更新铁砧结果槽，确保取走的是过滤后的物品
+            anvil.setItem(2, result);
+
             plugin.getCrossMessageTracker().removePlayer(player.getUniqueId());
             plugin.sendWarnings(player, plugin.getConfigManager().getContextName("anvil"),
                     detection.getFirstBannedWord(), detection.getFirstLevel(), detection.getDetectedWords());
-
-            SchedulerCompat.runTaskLater(plugin, player, () -> {
-                ItemStack handItem = player.getInventory().getItemInMainHand();
-                if (handItem != null && handItem.hasItemMeta()) {
-                    ItemMeta handMeta = handItem.getItemMeta();
-                    if (handMeta.displayName() != null) {
-                        String handName = legacySerializer.serialize(handMeta.displayName());
-                        BannedWordDetection handDetection = filterTextWithDetection(handName);
-                        String filteredName = handDetection.getFilteredText();
-                        if (!handName.equals(filteredName)) {
-                            handMeta.displayName(legacySerializer.deserialize(filteredName));
-                            handItem.setItemMeta(handMeta);
-                            player.getInventory().setItemInMainHand(handItem);
-                        }
-                    }
-                }
-            }, 1);
         }
     }
 
@@ -92,11 +82,12 @@ public class AnvilRenameLimiterListener implements Listener {
         }
 
         boolean fuzzyMatch = plugin.getConfigManager().isFuzzyMatchEnable();
-        int defaultMaxCharGap = plugin.getConfigManager().getDefaultMaxCharGap();
+        CharGapLimits defaultLimits = plugin.getConfigManager().getDefaultMaxCharGap();
         boolean reverseMatch = plugin.getConfigManager().isReverseMatchEnable();
 
-        return ColorCodeUtils.filterAllBannedWordsWithDetection(text, plugin.getConfigManager().getBannedWordsByLevel(),
-                fuzzyMatch, defaultMaxCharGap, plugin.getConfigManager().getMaxCharGapByLevel(),
+        // 使用 filterAllWithRecheck：替换后继续复核，检出二次组合的违禁词
+        return ColorCodeUtils.filterAllWithRecheck(text, plugin.getConfigManager().getBannedWordsByLevel(),
+                fuzzyMatch, defaultLimits, plugin.getConfigManager().getMaxCharGapByLevel(),
                 reverseMatch, plugin.getConfigManager().getReverseMatchByLevel(), plugin.getConfigManager().getWhitelist());
     }
 }

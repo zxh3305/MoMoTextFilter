@@ -81,11 +81,12 @@ public class ChatFilterListener implements Listener {
         }
 
         boolean fuzzyMatch = plugin.getConfigManager().isFuzzyMatchEnable();
-        int defaultMaxCharGap = plugin.getConfigManager().getDefaultMaxCharGap();
+        CharGapLimits defaultLimits = plugin.getConfigManager().getDefaultMaxCharGap();
         boolean reverseMatch = plugin.getConfigManager().isReverseMatchEnable();
 
-        return ColorCodeUtils.filterAllBannedWordsWithDetection(text, plugin.getConfigManager().getBannedWordsByLevel(),
-                fuzzyMatch, defaultMaxCharGap, plugin.getConfigManager().getMaxCharGapByLevel(),
+        // 使用 filterAllWithRecheck：替换后继续复核，满足 "傻他妈的逼" -> "*他妈的*" 后再检出 "他妈"
+        return ColorCodeUtils.filterAllWithRecheck(text, plugin.getConfigManager().getBannedWordsByLevel(),
+                fuzzyMatch, defaultLimits, plugin.getConfigManager().getMaxCharGapByLevel(),
                 reverseMatch, plugin.getConfigManager().getReverseMatchByLevel(), plugin.getConfigManager().getWhitelist());
     }
 
