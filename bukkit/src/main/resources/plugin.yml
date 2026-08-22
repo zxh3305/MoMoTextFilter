@@ -1,5 +1,5 @@
 name: MoMoTextFilter
-version: 2.0.2
+version: 2.0.3
 main: com.momocraft.textfilter.TextFilter
 api-version: 1.21
 authors: [MoMoCraft]

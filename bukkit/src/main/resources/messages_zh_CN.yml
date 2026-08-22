@@ -14,7 +14,7 @@ levels:
 
 info:
   title: '<gold>========== MoMoTextFilter ==========</gold>'
-  version: '<yellow>版本:</yellow> <white>2.0.2</white>'
+  version: '<yellow>版本:</yellow> <white>2.0.3</white>'
   author: '<yellow>作者:</yellow> <white>MoMoCraft</white>'
   desc: '<yellow>描述:</yellow> <white>违禁词过滤器插件</white>'
   banned-words-count: '<yellow>敏感词数量:</yellow> <white>%count%</white>'

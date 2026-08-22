@@ -33,10 +33,23 @@ fuzzy-match:
   enable: true
   levels:
     level-1:
-      max-char-gap: 1
+      # 违禁词字符之间允许插入的间隔字符数量上限（按字符类型分别配置）：
+      #   chinese: 中文间隔字符数量上限
+      #   english: 英文间隔字符数量上限
+      #   others:  其他（数字/标点/符号等）间隔字符数量上限
+      # 任意一类间隔字符数量超过对应上限，则该词直接放行（不视为违禁词）。
+      # 例：配置 chinese: 3 时，"傻他妈的逼" 中间 3 个中文间隔字符可匹配 "傻逼"；
+      #     而 "傻" + 51 个英文字符 + "逼" 因 english: 50 超限而放行。
+      max-char-gap:
+        chinese: 3
+        english: 50
+        others: 300
       max-chatbox-gap: 3
     level-2:
-      max-char-gap: 2
+      max-char-gap:
+        chinese: 3
+        english: 50
+        others: 300
       max-chatbox-gap: 0
 
 # ==================== 反向匹配配置 ====================
