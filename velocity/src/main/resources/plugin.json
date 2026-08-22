@@ -1,7 +1,7 @@
 {
   "id": "momotextfilter",
   "name": "MoMoTextFilter-Velocity",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "description": "违禁词过滤器插件 (Velocity端) - 仅支持ServerShout检测",
   "authors": ["MoMoCraft"],
   "main": "com.momocraft.textfilter.TextFilterVelocity",
