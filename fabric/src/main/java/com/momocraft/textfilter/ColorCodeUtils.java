@@ -205,7 +205,7 @@ public class ColorCodeUtils {
         return false;
     }
 
-    private static int[] compressRepeatingChars(String text, StringBuilder compressed) {
+    public static int[] compressRepeatingChars(String text, StringBuilder compressed) {
         List<Integer> indices = new ArrayList<>();
         int i = 0;
         while (i < text.length()) {
