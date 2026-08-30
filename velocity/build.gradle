@@ -25,7 +25,7 @@ tasks.withType(JavaCompile) {
 
 jar {
     archiveBaseName = 'MoMoTextFilter-Velocity'
-    archiveVersion = '2.0.3'
+    archiveVersion = '2.0.4'
     archiveClassifier = ''
     
     from {
