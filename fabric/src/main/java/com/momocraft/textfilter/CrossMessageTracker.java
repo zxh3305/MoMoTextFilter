@@ -169,7 +169,8 @@ public class CrossMessageTracker {
                         }
                     }
 
-                    boolean started = false;
+                    // 为所有部分匹配的词都建 state（此前只给第一个匹配的词建，
+                    // 若同级词表中其它同首字符词排在前面，会导致后面的词跨消息永远接不上）
                     for (String target : targets) {
                         String lowerTarget = CharacterMapper.normalize(target.toLowerCase());
                         char firstChar = lowerTarget.charAt(0);
@@ -182,20 +183,18 @@ public class CrossMessageTracker {
                                     ? fuzzyPrefixMatch(tail, lowerTarget, charGapLimits)
                                     : strictPrefixMatch(tail, lowerTarget);
                             if (pm.matchedLen > 0 && pm.matchedLen < lowerTarget.length()) {
+                                // tail 内索引平移回 compressedText 全局，再映射回 strippedText 原始索引
                                 int[] globalPos = new int[pm.positionsInCurrent.length];
                                 for (int k = 0; k < pm.positionsInCurrent.length; k++) {
                                     int cp = pm.positionsInCurrent[k] + idx;
                                     globalPos[k] = (cp >= 0 && cp < compressedToOriginal.length) ? compressedToOriginal[cp] : cp;
                                 }
                                 addTrackingState(playerId, target, level, pm.matchedLen, globalPos);
-                                started = true;
-                                break;
+                                break; // 每个 target 只建一个 state
                             }
                             s = idx + 1;
                         }
-                        if (started) break;
                     }
-                    if (started) break;
                 }
             }
         }
@@ -356,8 +355,20 @@ public class CrossMessageTracker {
     }
 
     private void addTrackingState(UUID playerId, String bannedWord, String level, int currentPosition, int[] positions) {
-        trackingStates.computeIfAbsent(playerId, k -> new ArrayList<>())
-                .add(new TrackingState(bannedWord, level, currentPosition, positions));
+        List<TrackingState> states = trackingStates.computeIfAbsent(playerId, k -> new ArrayList<>());
+        // 同一玩家同一词同一等级只保留一个未完成的 partial state：
+        // 避免重复消息（如连发多条"民"）堆积重复 state 造成重复提示
+        for (TrackingState existing : states) {
+            if (!existing.hasMatched && existing.bannedWord.equals(bannedWord) && existing.level.equals(level)) {
+                existing.lastUpdateTime = System.currentTimeMillis();
+                if (currentPosition > existing.currentPosition) {
+                    existing.currentPosition = currentPosition;
+                    existing.lastMatchPositions = positions == null ? new int[0] : Arrays.copyOf(positions, positions.length);
+                }
+                return;
+            }
+        }
+        states.add(new TrackingState(bannedWord, level, currentPosition, positions));
     }
 
     /** 返回实际匹配到的违禁词文本：正向命中返回配置词，反向命中返回反转词，未命中返回 null。 */
