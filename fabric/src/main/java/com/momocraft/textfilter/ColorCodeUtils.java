@@ -224,21 +224,47 @@ public class ColorCodeUtils {
         return result;
     }
 
+    /** 判断违禁词区间 [start, end) 是否完全被白名单保护区域覆盖。
+     *  先收集所有白名单词的匹配区间，合并相邻/重叠的区间，再判断违禁词是否落入任一合并后的区间。
+     *  这样，多个相邻白名单词拼接（如 tps + bar -> tpsbar）会被视作一个完整的保护区域。 */
     private static boolean isInWhitelistRange(int start, int end, String text, Iterable<String> whitelist) {
         if (whitelist == null) {
             return false;
         }
+
+        java.util.List<int[]> ranges = new java.util.ArrayList<>();
         for (String whiteWord : whitelist) {
             if (whiteWord == null) continue;
             String lowerWhite = normalizeText(whiteWord);
             if (lowerWhite.isEmpty()) continue;
             int whiteStart = 0;
             while ((whiteStart = text.indexOf(lowerWhite, whiteStart)) != -1) {
-                int whiteEnd = whiteStart + lowerWhite.length();
-                if (start >= whiteStart && end <= whiteEnd) {
-                    return true;
-                }
+                ranges.add(new int[]{whiteStart, whiteStart + lowerWhite.length()});
                 whiteStart++;
+            }
+        }
+        if (ranges.isEmpty()) {
+            return false;
+        }
+
+        // 合并相邻或重叠的区间
+        ranges.sort((a, b) -> a[0] != b[0] ? Integer.compare(a[0], b[0]) : Integer.compare(b[1], a[1]));
+        java.util.List<int[]> merged = new java.util.ArrayList<>();
+        int[] cur = ranges.get(0);
+        for (int i = 1; i < ranges.size(); i++) {
+            int[] next = ranges.get(i);
+            if (next[0] <= cur[1]) {
+                cur[1] = Math.max(cur[1], next[1]);
+            } else {
+                merged.add(cur);
+                cur = next;
+            }
+        }
+        merged.add(cur);
+
+        for (int[] range : merged) {
+            if (start >= range[0] && end <= range[1]) {
+                return true;
             }
         }
         return false;
