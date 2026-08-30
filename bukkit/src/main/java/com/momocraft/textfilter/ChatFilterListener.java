@@ -35,7 +35,12 @@ public class ChatFilterListener implements Listener {
             String filteredMessage = message;
             
             if (trackingResult.isCrossMessageMatch()) {
-                filteredMessage = replaceCrossMessageBannedWord(message, trackingResult.getBannedWord());
+                int[] positions = trackingResult.getMatchedPositionsInCurrent();
+                if (positions != null && positions.length > 0) {
+                    filteredMessage = replaceCrossByPositions(message, positions);
+                } else {
+                    filteredMessage = replaceCrossMessageBannedWord(message, trackingResult.getBannedWord());
+                }
             }
             
             BannedWordDetection detection = filterTextWithDetection(filteredMessage);
@@ -90,6 +95,10 @@ public class ChatFilterListener implements Listener {
                 reverseMatch, plugin.getConfigManager().getReverseMatchByLevel(), plugin.getConfigManager().getWhitelist());
     }
 
+    /** 跨消息匹配成功后，替换当前消息中匹配到的违禁词后缀字符。
+     *  从 processedText 末尾向左查找"与 bannedWord 后缀能连续匹配"的字符段，
+     *  遇不匹配字符立即停止 —— 这样 "逼·" 会只把 "逼" 标记为替换，保留 "·"，
+     *  不再依赖严格的文本纯后缀匹配，避免匹配到了但替换不生效的 bug。 */
     private String replaceCrossMessageBannedWord(String currentMessage, String bannedWord) {
         if (currentMessage == null || currentMessage.isEmpty() || bannedWord == null || bannedWord.isEmpty()) {
             return currentMessage;
@@ -98,18 +107,44 @@ public class ChatFilterListener implements Listener {
         TextProcessor processor = new TextProcessor(currentMessage);
         String processedText = CharacterMapper.normalize(processor.getProcessedText().toLowerCase());
         String lowerBanned = CharacterMapper.normalize(bannedWord.toLowerCase());
+        if (processedText.isEmpty() || lowerBanned.isEmpty()) {
+            return currentMessage;
+        }
 
-        for (int i = 1; i <= processedText.length(); i++) {
-            String suffix = processedText.substring(processedText.length() - i);
-            if (lowerBanned.endsWith(suffix)) {
-                boolean[] toReplace = new boolean[processedText.length()];
-                for (int j = processedText.length() - i; j < processedText.length(); j++) {
-                    toReplace[j] = true;
-                }
-                return processor.replaceInOriginalWithMask(toReplace, "*");
+        boolean[] toReplace = new boolean[processedText.length()];
+        int bannedIdx = lowerBanned.length() - 1;
+        boolean foundAny = false;
+
+        for (int i = processedText.length() - 1; i >= 0 && bannedIdx >= 0; i--) {
+            if (processedText.charAt(i) == lowerBanned.charAt(bannedIdx)) {
+                toReplace[i] = true;
+                bannedIdx--;
+                foundAny = true;
+            } else {
+                // 遇到不匹配字符立即停止；保证只替换"连续后缀匹配段"
+                if (foundAny) break;
             }
         }
 
+        if (foundAny) {
+            return processor.replaceInOriginalWithMask(toReplace, "*");
+        }
         return currentMessage;
+    }
+
+    /** 优先走这条：CrossMessageTracker 已计算出当前消息内应打码的 processedText 索引，直接按位置打码，
+     *  结果比 listener 侧 fallback 的"向左扫 suffix"更精准（尤其夹字 fuzzy 命中场景）。 */
+    private String replaceCrossByPositions(String currentMessage, int[] positions) {
+        if (currentMessage == null || positions == null || positions.length == 0) {
+            return currentMessage;
+        }
+        TextProcessor processor = new TextProcessor(currentMessage);
+        int len = processor.getProcessedText() == null ? 0 : processor.getProcessedText().length();
+        if (len == 0) return currentMessage;
+        boolean[] toReplace = new boolean[len];
+        for (int p : positions) {
+            if (p >= 0 && p < len) toReplace[p] = true;
+        }
+        return processor.replaceInOriginalWithMask(toReplace, "*");
     }
 }
