@@ -13,7 +13,7 @@ levels:
 
 info:
   title: '<gold>========== MoMoTextFilter ==========</gold>'
-  version: '<yellow>Version:</yellow> <white>2.0.3</white>'
+  version: '<yellow>Version:</yellow> <white>2.0.4</white>'
   author: '<yellow>Author:</yellow> <white>MoMoCraft</white>'
   desc: '<yellow>Description:</yellow> <white>Banned word filter plugin</white>'
   banned-words-count: '<yellow>Banned words count:</yellow> <white>%count%</white>'
