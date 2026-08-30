@@ -33,7 +33,12 @@ public class TextFilterApi {
             String filteredMessage = message;
 
             if (trackingResult.isCrossMessageMatch()) {
-                filteredMessage = replaceCrossMessageBannedWord(message, trackingResult.getBannedWord());
+                int[] positions = trackingResult.getMatchedPositionsInCurrent();
+                if (positions != null && positions.length > 0) {
+                    filteredMessage = replaceCrossByPositions(message, positions);
+                } else {
+                    filteredMessage = replaceCrossMessageBannedWord(message, trackingResult.getBannedWord());
+                }
             }
 
             BannedWordDetection detection = filterTextWithDetection(filteredMessage, config);
@@ -97,6 +102,9 @@ public class TextFilterApi {
                 reverseMatch, config.getReverseMatchByLevel(), config.getWhitelist());
     }
 
+    /** 跨消息匹配成功后，替换当前消息中匹配到的违禁词后缀字符。
+     *  从 processedText 末尾向左查找"与 bannedWord 后缀能连续匹配"的字符段，
+     *  遇不匹配字符立即停止 —— 这样 "逼·" 会只把 "逼" 标记为替换，保留 "·"。 */
     private static String replaceCrossMessageBannedWord(String currentMessage, String bannedWord) {
         if (currentMessage == null || currentMessage.isEmpty() || bannedWord == null || bannedWord.isEmpty()) {
             return currentMessage;
@@ -105,18 +113,42 @@ public class TextFilterApi {
         TextProcessor processor = new TextProcessor(currentMessage);
         String processedText = CharacterMapper.normalize(processor.getProcessedText().toLowerCase());
         String lowerBanned = CharacterMapper.normalize(bannedWord.toLowerCase());
+        if (processedText.isEmpty() || lowerBanned.isEmpty()) {
+            return currentMessage;
+        }
 
-        for (int i = 1; i <= processedText.length(); i++) {
-            String suffix = processedText.substring(processedText.length() - i);
-            if (lowerBanned.endsWith(suffix)) {
-                boolean[] toReplace = new boolean[processedText.length()];
-                for (int j = processedText.length() - i; j < processedText.length(); j++) {
-                    toReplace[j] = true;
-                }
-                return processor.replaceInOriginalWithMask(toReplace, "*");
+        boolean[] toReplace = new boolean[processedText.length()];
+        int bannedIdx = lowerBanned.length() - 1;
+        boolean foundAny = false;
+
+        for (int i = processedText.length() - 1; i >= 0 && bannedIdx >= 0; i--) {
+            if (processedText.charAt(i) == lowerBanned.charAt(bannedIdx)) {
+                toReplace[i] = true;
+                bannedIdx--;
+                foundAny = true;
+            } else {
+                if (foundAny) break;
             }
         }
 
+        if (foundAny) {
+            return processor.replaceInOriginalWithMask(toReplace, "*");
+        }
         return currentMessage;
+    }
+
+    /** Velocity API 侧优先按 tracker 给出的 processedText 索引定点打码。 */
+    private static String replaceCrossByPositions(String currentMessage, int[] positions) {
+        if (currentMessage == null || positions == null || positions.length == 0) {
+            return currentMessage;
+        }
+        TextProcessor processor = new TextProcessor(currentMessage);
+        int len = processor.getProcessedText() == null ? 0 : processor.getProcessedText().length();
+        if (len == 0) return currentMessage;
+        boolean[] toReplace = new boolean[len];
+        for (int p : positions) {
+            if (p >= 0 && p < len) toReplace[p] = true;
+        }
+        return processor.replaceInOriginalWithMask(toReplace, "*");
     }
 }
