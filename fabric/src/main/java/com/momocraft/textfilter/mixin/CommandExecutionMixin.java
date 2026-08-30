@@ -51,7 +51,13 @@ public abstract class CommandExecutionMixin {
         CrossMessageTracker.TrackingResult trackingResult = mod.getCrossMessageTracker().checkAndTrack(player, extractedMessage, contextName);
         if (trackingResult != null) {
             if (trackingResult.isCrossMessageMatch()) {
-                String filteredMessage = replaceCrossMessageBannedWord(extractedMessage, trackingResult.getBannedWord());
+                int[] positions = trackingResult.getMatchedPositionsInCurrent();
+                String filteredMessage;
+                if (positions != null && positions.length > 0) {
+                    filteredMessage = replaceCrossByPositions(extractedMessage, positions);
+                } else {
+                    filteredMessage = replaceCrossMessageBannedWord(extractedMessage, trackingResult.getBannedWord());
+                }
                 if (!extractedMessage.equals(filteredMessage)) {
                     String newCommand = cmdType.replaceMessage(command, filteredMessage);
                     if (!command.equals(newCommand)) {
@@ -104,22 +110,58 @@ public abstract class CommandExecutionMixin {
                 reverseMatch, config.getReverseMatchByLevel(), config.getWhitelist());
     }
 
+    /** 跨消息匹配成功后，替换当前消息中匹配到的违禁词后缀字符。
+     *  从文本末尾向左查找"与 bannedWord 后缀能连续匹配"的字符段，
+     *  遇不匹配字符立即停止 —— 这样 "逼·" 会只把 "逼" 替换为 "*"，保留 "·"。 */
     private String replaceCrossMessageBannedWord(String currentMessage, String bannedWord) {
         if (currentMessage == null || currentMessage.isEmpty() || bannedWord == null || bannedWord.isEmpty()) {
             return currentMessage;
         }
 
         String lowerCurrent = ColorCodeUtils.stripAllFormatting(currentMessage).toLowerCase();
-        String lowerBanned = bannedWord.toLowerCase();
+        String lowerBanned = CharacterMapper.normalize(bannedWord.toLowerCase());
+        if (lowerCurrent.isEmpty() || lowerBanned.isEmpty()) {
+            return currentMessage;
+        }
 
-        for (int i = 1; i <= lowerCurrent.length(); i++) {
-            String suffix = lowerCurrent.substring(lowerCurrent.length() - i);
-            if (lowerBanned.endsWith(suffix)) {
-                String replacement = "*".repeat(i);
-                return currentMessage.substring(0, currentMessage.length() - i) + replacement;
+        // 只打码位置的"连续匹配段"
+        boolean[] toReplace = new boolean[currentMessage.length()];
+        int bannedIdx = lowerBanned.length() - 1;
+        boolean foundAny = false;
+
+        for (int i = lowerCurrent.length() - 1; i >= 0 && bannedIdx >= 0; i--) {
+            if (lowerCurrent.charAt(i) == lowerBanned.charAt(bannedIdx)) {
+                toReplace[i] = true;
+                bannedIdx--;
+                foundAny = true;
+            } else {
+                if (foundAny) break;
             }
         }
 
-        return currentMessage;
+        if (!foundAny) {
+            return currentMessage;
+        }
+        StringBuilder sb = new StringBuilder(currentMessage.length());
+        for (int i = 0; i < currentMessage.length(); i++) {
+            sb.append(toReplace[i] ? "*" : currentMessage.charAt(i));
+        }
+        return sb.toString();
+    }
+
+    /** Fabric 命令侧按 tracker 返回的位置索引 1:1 打码（命令文本通常无 MiniMessage）。 */
+    private String replaceCrossByPositions(String currentMessage, int[] positions) {
+        if (currentMessage == null || positions == null || positions.length == 0) {
+            return currentMessage;
+        }
+        boolean[] toReplace = new boolean[currentMessage.length()];
+        for (int p : positions) {
+            if (p >= 0 && p < currentMessage.length()) toReplace[p] = true;
+        }
+        StringBuilder sb = new StringBuilder(currentMessage.length());
+        for (int i = 0; i < currentMessage.length(); i++) {
+            sb.append(toReplace[i] ? "*" : currentMessage.charAt(i));
+        }
+        return sb.toString();
     }
 }
