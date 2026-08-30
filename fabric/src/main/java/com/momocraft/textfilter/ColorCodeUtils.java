@@ -405,10 +405,19 @@ public class ColorCodeUtils {
             }
         }
 
-        // 非重叠贪心选择：按起点升序（同起点取覆盖更长者）排列，逐个选取不重叠的区间
-        candidates.sort((a, b) -> a.start != b.start
-                ? Integer.compare(a.start, b.start)
-                : Integer.compare(b.end, a.end));
+        // 非重叠贪心选择：按起点升序排列；同起点时优先"间隔字符更少"的候选（精确匹配优先于模糊匹配，
+        // 如 "傻逼鸭子" 同起点命中 "傻逼"(0间隔) 与 "傻子"(2间隔) 时选 "傻逼"），再取覆盖更长者
+        candidates.sort((a, b) -> {
+            if (a.start != b.start) {
+                return Integer.compare(a.start, b.start);
+            }
+            int gapA = (a.end - a.start) - a.positions.size();
+            int gapB = (b.end - b.start) - b.positions.size();
+            if (gapA != gapB) {
+                return Integer.compare(gapA, gapB);
+            }
+            return Integer.compare(b.end, a.end);
+        });
         int lastEnd = -1;
         for (MatchCandidate candidate : candidates) {
             if (candidate.start >= lastEnd) {
