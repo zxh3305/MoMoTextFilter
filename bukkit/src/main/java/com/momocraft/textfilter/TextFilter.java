@@ -27,7 +27,11 @@ public class TextFilter extends JavaPlugin {
         configManager = new ConfigManager(this);
         crossMessageTracker = new CrossMessageTracker(this);
         punishmentManager = new PunishmentManager(this);
-        
+
+        // bStats 数据统计 (https://bstats.org/plugin/bukkit/MoMoTextFilter/33748)
+        int pluginId = 33748;
+        Metrics metrics = new Metrics(this, pluginId);
+
         getServer().getPluginManager().registerEvents(new TextFilterListener(this), this);
         getServer().getPluginManager().registerEvents(new AnvilRenameLimiterListener(this), this);
         getServer().getPluginManager().registerEvents(new ChatFilterListener(this), this);
