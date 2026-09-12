@@ -39,6 +39,12 @@ public class TextProcessor {
     private final int[] processedToOriginal;
     /** 预处理后文本中每个字符对应的原始输入位置，-1 表示转换时新增的字符（如 < 和 >） */
     private final int[] preprocessedToRaw;
+    /** 整体剔除所有 MiniMessage 标签块（开标签+参数+闭标签整体剔除，含载荷）后得到的纯文本。
+     *  与 {@link #processedText}（标签载荷提取视图）不同，本视图不含任何标签内部字符。
+     *  用于第一轮整剔检测：傻&lt;click:run_command:/say 一二三&gt;逼&lt;/click&gt; 整剔后为 "傻逼"。 */
+    private final String strippedTagsText;
+    /** 整剔文本每个字符对应的原始输入位置，-1 表示该字符来自被剥离的颜色代码 */
+    private final int[] strippedTagsToRaw;
 
     public TextProcessor(String text) {
         this.rawText = text;
@@ -48,6 +54,9 @@ public class TextProcessor {
         this.preprocessedToRaw = preprocessed.map;
         this.segments = splitByMiniMessageTags(preprocessed.text);
         this.processedText = extractVisibleText(segments);
+        StrippedView stripped = buildStrippedView(segments);
+        this.strippedTagsText = stripped.text;
+        this.strippedTagsToRaw = stripped.toRaw;
 
         List<Integer> origToProc = new ArrayList<>();
         List<Integer> procToOrig = new ArrayList<>();
@@ -388,6 +397,114 @@ public class TextProcessor {
         return sb.toString();
     }
 
+    /**
+     * 构建整剔视图：遍历分段，标签段（含载荷）整块剔除，普通文本段剥离颜色代码后保留。
+     * 同时记录整剔文本每个字符到原始输入的位置映射。
+     */
+    private StrippedView buildStrippedView(List<Segment> segments) {
+        StringBuilder sb = new StringBuilder();
+        List<Integer> toRaw = new ArrayList<>();
+        int origPos = 0;
+        for (Segment segment : segments) {
+            if (segment.isTag) {
+                origPos += segment.content.length();
+                continue;
+            }
+            int i = 0;
+            while (i < segment.content.length()) {
+                char c = segment.content.charAt(i);
+                // 以下颜色代码跳过逻辑与 buildPositionMapping 的普通段保持一致
+                if (c == '&' && i + 1 < segment.content.length() && segment.content.charAt(i + 1) == 'x') {
+                    if (i + 14 <= segment.content.length()) {
+                        boolean isValid = true;
+                        for (int j = 2; j <= 12; j += 2) {
+                            char ampChar = segment.content.charAt(i + j);
+                            char hexChar = segment.content.charAt(i + j + 1);
+                            if (ampChar != '&' || !((hexChar >= '0' && hexChar <= '9') ||
+                                   (hexChar >= 'a' && hexChar <= 'f') ||
+                                   (hexChar >= 'A' && hexChar <= 'F'))) {
+                                isValid = false;
+                                break;
+                            }
+                        }
+                        if (isValid) {
+                            origPos += 14;
+                            i += 14;
+                            continue;
+                        }
+                    }
+                }
+                if (c == '&' && i + 1 < segment.content.length() && segment.content.charAt(i + 1) == '#') {
+                    int hexLen = 0;
+                    if (i + 8 <= segment.content.length()) {
+                        boolean valid6 = true;
+                        for (int j = 2; j < 8; j++) {
+                            char h = segment.content.charAt(i + j);
+                            if (!((h >= '0' && h <= '9') || (h >= 'a' && h <= 'f') || (h >= 'A' && h <= 'F'))) {
+                                valid6 = false;
+                                break;
+                            }
+                        }
+                        if (valid6) hexLen = 8;
+                    }
+                    if (hexLen == 0 && i + 5 <= segment.content.length()) {
+                        boolean valid3 = true;
+                        for (int j = 2; j < 5; j++) {
+                            char h = segment.content.charAt(i + j);
+                            if (!((h >= '0' && h <= '9') || (h >= 'a' && h <= 'f') || (h >= 'A' && h <= 'F'))) {
+                                valid3 = false;
+                                break;
+                            }
+                        }
+                        if (valid3) hexLen = 5;
+                    }
+                    if (hexLen > 0) {
+                        origPos += hexLen;
+                        i += hexLen;
+                        continue;
+                    }
+                }
+                if ((c == '&' || c == '§') && i + 1 < segment.content.length()) {
+                    char next = segment.content.charAt(i + 1);
+                    if ((next >= '0' && next <= '9') || (next >= 'a' && next <= 'f') ||
+                        (next >= 'A' && next <= 'F') || "klmnorX".indexOf(next) >= 0) {
+                        origPos += 2;
+                        i += 2;
+                        continue;
+                    }
+                }
+                if (c == '<' && i + 1 < segment.content.length() && segment.content.charAt(i + 1) == '#') {
+                    int end = segment.content.indexOf('>', i);
+                    if (end > i) {
+                        origPos += end - i + 1;
+                        i = end + 1;
+                        continue;
+                    }
+                }
+                sb.append(c);
+                int rawIdx = origPos < preprocessedToRaw.length ? preprocessedToRaw[origPos] : -1;
+                toRaw.add(rawIdx);
+                origPos++;
+                i++;
+            }
+        }
+        int[] arr = new int[toRaw.size()];
+        for (int k = 0; k < arr.length; k++) {
+            arr[k] = toRaw.get(k);
+        }
+        return new StrippedView(sb.toString(), arr);
+    }
+
+    /** 整剔视图构建结果 */
+    private static class StrippedView {
+        final String text;
+        final int[] toRaw;
+        StrippedView(String text, int[] toRaw) {
+            this.text = text;
+            this.toRaw = toRaw;
+        }
+    }
+
     /** 计算普通文本段去除颜色代码后的可见长度（与 extractVisibleText 的剥离逻辑一致） */
     private static int visibleTextLength(String content) {
         if (content == null) {
@@ -530,6 +647,16 @@ public class TextProcessor {
         return processedText;
     }
 
+    /** 整体剔除所有 MiniMessage 标签块（含载荷）后的纯文本视图。 */
+    public String getStrippedTagsText() {
+        return strippedTagsText;
+    }
+
+    /** 文本是否包含有效 MiniMessage 标签（用于第一轮整剔检测的快速预判）。 */
+    public static boolean containsMiniMessageTag(String text) {
+        return text != null && MINIMESSAGE_TAG.matcher(text).find();
+    }
+
     public List<Segment> getSegments() {
         return segments;
     }
@@ -602,6 +729,38 @@ public class TextProcessor {
                     if (rawIdx >= 0 && rawIdx < toReplace.length) {
                         toReplace[rawIdx] = true;
                     }
+                }
+            }
+        }
+
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < rawText.length(); i++) {
+            if (toReplace[i]) {
+                sb.append(replacement);
+            } else {
+                sb.append(rawText.charAt(i));
+            }
+        }
+
+        return sb.toString();
+    }
+
+    /**
+     * 根据整剔文本位置的掩码，在原始输入中对应位置打码。
+     * 整剔视图不含标签字符，掩码位置通过 strippedTagsToRaw 映射回原始文本打码，
+     * 标签结构完整保留（如 傻&lt;click:run_command:/say 一&gt;逼&lt;/click&gt; → *&lt;click:run_command:/say 一&gt;*&lt;/click&gt;）。
+     */
+    public String replaceInOriginalWithStrippedMask(boolean[] mask, String replacement) {
+        if (mask == null || mask.length == 0) {
+            return rawText;
+        }
+
+        boolean[] toReplace = new boolean[rawText.length()];
+        for (int i = 0; i < mask.length && i < strippedTagsToRaw.length; i++) {
+            if (mask[i]) {
+                int rawIdx = strippedTagsToRaw[i];
+                if (rawIdx >= 0 && rawIdx < toReplace.length) {
+                    toReplace[rawIdx] = true;
                 }
             }
         }
