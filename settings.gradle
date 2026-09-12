@@ -8,11 +8,11 @@ pluginManagement {
 
 rootProject.name = 'MoMoTextFilter'
 
+// fabric 为独立构建模块（含自有 settings.gradle.kts 与 fabric-loom 版本定义），
+// 不能被根项目 include，否则根项目解析 fabric-loom 插件时会因缺少版本号而失败。
 include 'bukkit'
 include 'velocity'
-include 'fabric'
 
 project(':bukkit').projectDir = new File(settingsDir, 'bukkit')
 project(':velocity').projectDir = new File(settingsDir, 'velocity')
-project(':fabric').projectDir = new File(settingsDir, 'fabric')
 
