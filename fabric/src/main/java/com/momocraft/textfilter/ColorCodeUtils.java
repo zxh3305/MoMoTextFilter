@@ -247,13 +247,15 @@ public class ColorCodeUtils {
             return false;
         }
 
-        // 合并相邻或重叠的区间
+        // 合并相邻或重叠的区间：
+        // 先按起点升序排序，然后 [a,b] + [b,c] 或 [a,b] + [a+N,b+M] 合并成一个连续保护段
         ranges.sort((a, b) -> a[0] != b[0] ? Integer.compare(a[0], b[0]) : Integer.compare(b[1], a[1]));
         java.util.List<int[]> merged = new java.util.ArrayList<>();
         int[] cur = ranges.get(0);
         for (int i = 1; i < ranges.size(); i++) {
             int[] next = ranges.get(i);
             if (next[0] <= cur[1]) {
+                // 区间相邻（next.start == cur.end）或重叠 —— 合并为一段
                 cur[1] = Math.max(cur[1], next[1]);
             } else {
                 merged.add(cur);
@@ -262,6 +264,7 @@ public class ColorCodeUtils {
         }
         merged.add(cur);
 
+        // 检查违禁词区间是否完全包含在任一合并后的白名单区间内
         for (int[] range : merged) {
             if (start >= range[0] && end <= range[1]) {
                 return true;
@@ -353,12 +356,25 @@ public class ColorCodeUtils {
             Map<String, List<String>> bannedWordsByLevel,
             boolean fuzzyMatch, CharGapLimits defaultLimits, Map<String, CharGapLimits> limitsByLevel,
             boolean reverseMatch, Map<String, Boolean> reverseMatchByLevel, Iterable<String> whitelist) {
+        return filterAllBannedWordsWithDetection(text, bannedWordsByLevel, fuzzyMatch, defaultLimits, limitsByLevel,
+                reverseMatch, reverseMatchByLevel, whitelist, false);
+    }
+
+    /**
+     * @param strippedTagView true 时检测域为"整体剔除 MiniMessage 标签块"视图（不含任何标签内部字符），
+     *                        打码经整剔映射回原始文本（标签结构保留）；false 时为常规可见文本视图。
+     */
+    public static BannedWordDetection filterAllBannedWordsWithDetection(String text,
+            Map<String, List<String>> bannedWordsByLevel,
+            boolean fuzzyMatch, CharGapLimits defaultLimits, Map<String, CharGapLimits> limitsByLevel,
+            boolean reverseMatch, Map<String, Boolean> reverseMatchByLevel, Iterable<String> whitelist,
+            boolean strippedTagView) {
         if (text == null) {
             return new BannedWordDetection(null);
         }
 
         TextProcessor processor = new TextProcessor(text);
-        String visibleText = processor.getProcessedText();
+        String visibleText = strippedTagView ? processor.getStrippedTagsText() : processor.getProcessedText();
         // NFKC 可能将单字符展开为多字符（如 "…"(U+2026) -> "...")，导致规范化文本长度
         // 与可见文本不一致。必须记录 规范化索引 -> 可见索引 映射，否则替换时星号会错位。
         NormResult norm = normalizeWithMapping(visibleText);
@@ -440,7 +456,9 @@ public class ColorCodeUtils {
             }
         }
 
-        String filtered = processor.replaceInOriginalWithMask(visibleMask, "*");
+        String filtered = strippedTagView
+                ? processor.replaceInOriginalWithStrippedMask(visibleMask, "*")
+                : processor.replaceInOriginalWithMask(visibleMask, "*");
         // 如果没有违禁词，返回原始文本（未预处理）；否则返回预处理后的文本（带替换）
         if (filtered.equals(processor.getOriginalText())) {
             result.setFilteredText(text);
@@ -637,12 +655,25 @@ public class ColorCodeUtils {
             Map<String, List<String>> bannedWordsByLevel,
             boolean fuzzyMatch, CharGapLimits defaultLimits, Map<String, CharGapLimits> limitsByLevel,
             boolean reverseMatch, Map<String, Boolean> reverseMatchByLevel, Iterable<String> whitelist) {
+        return filterAllWithRecheck(text, bannedWordsByLevel, fuzzyMatch, defaultLimits, limitsByLevel,
+                reverseMatch, reverseMatchByLevel, whitelist, false);
+    }
+
+    /**
+     * @param strippedTagView true 时以整剔视图检测复核（每轮都在"整体剔除标签块"后的文本域匹配）。
+     * @see #filterAllBannedWordsWithDetection(String, Map, boolean, CharGapLimits, Map, boolean, Map, Iterable, boolean)
+     */
+    public static BannedWordDetection filterAllWithRecheck(String text,
+            Map<String, List<String>> bannedWordsByLevel,
+            boolean fuzzyMatch, CharGapLimits defaultLimits, Map<String, CharGapLimits> limitsByLevel,
+            boolean reverseMatch, Map<String, Boolean> reverseMatchByLevel, Iterable<String> whitelist,
+            boolean strippedTagView) {
         if (text == null) {
             return new BannedWordDetection(null);
         }
 
         BannedWordDetection detection = filterAllBannedWordsWithDetection(text, bannedWordsByLevel,
-                fuzzyMatch, defaultLimits, limitsByLevel, reverseMatch, reverseMatchByLevel, whitelist);
+                fuzzyMatch, defaultLimits, limitsByLevel, reverseMatch, reverseMatchByLevel, whitelist, strippedTagView);
         String filtered = detection.getFilteredText();
         if (filtered == null || filtered.equals(text)) {
             return detection;
@@ -651,7 +682,7 @@ public class ColorCodeUtils {
         // 反复核处理后的文本，最多 5 次以防死循环
         for (int i = 0; i < 5; i++) {
             BannedWordDetection recheck = filterAllBannedWordsWithDetection(filtered, bannedWordsByLevel,
-                    fuzzyMatch, defaultLimits, limitsByLevel, reverseMatch, reverseMatchByLevel, whitelist);
+                    fuzzyMatch, defaultLimits, limitsByLevel, reverseMatch, reverseMatchByLevel, whitelist, strippedTagView);
             String next = recheck.getFilteredText();
             if (next.equals(filtered)) {
                 break;
@@ -664,6 +695,34 @@ public class ColorCodeUtils {
 
         detection.setFilteredText(filtered);
         return detection;
+    }
+
+    /**
+     * 第一轮：整体剔除 MiniMessage 标签块后的违禁词检测（含复核循环，直至整剔文本无法再检出）。
+     * <p>
+     * 动机：常规视图把 click/insert 等标签载荷提取为可见文本，载荷字符会成为
+     * "傻"&nbsp;与&nbsp;"逼" 之间的间隔字符导致跨字符检测放行（如 傻&lt;click:run_command:/say 一二三&gt;逼&lt;/click&gt;）。
+     * 整剔视图则把标签块连同载荷整体剔除 —— 该例整剔后为 "傻逼"，可直接检出并打码为
+     * *&lt;click:run_command:/say 一二三&gt;*&lt;/click&gt;，之后调用方继续在复原态文本上做常规检测与跨消息检测。
+     * <p>
+     * 无标签（或整剔视图与常规视图一致）时直接返回未命中，避免重复检测开销。
+     */
+    public static BannedWordDetection filterStrippedTagsWithDetection(String text,
+            Map<String, List<String>> bannedWordsByLevel,
+            boolean fuzzyMatch, CharGapLimits defaultLimits, Map<String, CharGapLimits> limitsByLevel,
+            boolean reverseMatch, Map<String, Boolean> reverseMatchByLevel, Iterable<String> whitelist) {
+        if (text == null || text.isEmpty() || !TextProcessor.containsMiniMessageTag(text)) {
+            return new BannedWordDetection(text);
+        }
+
+        // 整剔视图与常规视图一致（如仅含纯格式标签 <red>）时，第一轮与常规检测等价，跳过
+        TextProcessor probe = new TextProcessor(text);
+        if (probe.getStrippedTagsText().equals(probe.getProcessedText())) {
+            return new BannedWordDetection(text);
+        }
+
+        return filterAllWithRecheck(text, bannedWordsByLevel, fuzzyMatch, defaultLimits, limitsByLevel,
+                reverseMatch, reverseMatchByLevel, whitelist, true);
     }
 
     public static boolean containsAnyBannedWord(String text, Map<String, List<String>> bannedWordsByLevel,
